@@ -41,6 +41,19 @@ npm run build:preview  # un seul fichier HTML autonome, données de démo
 python3 -I scripts/make_seed.py <export-du-sheet.txt>   # régénère les données de démo et seed.sql
 ```
 
+## Direction artistique
+« Neon Grand Prix » : borne d'arcade 90s × HUD de course. Tokens dans `src/styles.css` (couleurs à rôle fixe :
+jaune = records, cyan = navigation, vert = victoires, rouge = défaites/rivalités, violet = Takes et raretés).
+Polices : Oxanium (titres, chiffres), DM Sans (texte), JetBrains Mono (positions, scores). Emblèmes des trophées
+dessinés en SVG dans `src/components/Emblem.tsx` (originaux, aucun asset Nintendo).
+
+## Ce qui est réel, ce qui est simulé
+- **Réel** : classements, sessions, rivalités, records, trophées (calculés sur l'historique), horoscope et défi du jour
+  (version provisoire générée à partir des stats, l'IA arrive au lot 3).
+- **Simulé** : `src/mock/takes.ts` uniquement. Les Takes des autres pilotes sont fictifs (résolus sur les vrais
+  résultats) et le Take de l'utilisateur reste dans son navigateur. Rien n'est envoyé à un serveur : la confidentialité
+  avant 13h, les comptes et la reformulation IA arrivent au lot 2 (RLS déjà prévue dans la migration).
+
 ## Règles de calcul (résumé)
 - Deux saisies à moins de 60 s : la seconde remplace la première.
 - Même nom deux fois dans une course : course écartée, listée dans Records > Saisies à corriger.

@@ -1,0 +1,318 @@
+import { CSSProperties, useMemo, useState } from 'react';
+import { TrendChart } from '../components/charts';
+import { Avg, Avatar, Delta, Empty, Panel, PlacesBar, PlayerTag, Section, Stat } from '../components/ui';
+import { useStore } from '../store';
+import {
+  dayKey, fmtAvg, fmtDay, fmtDuration, fmtMonth, fmtShort, monthKey, parseLocal, Period, PERIOD_LABELS, PeriodKind,
+  periodOf, previousPeriod, nextPeriod, rankedWithEvolution, records, Run, standings,
+} from '../lib/stats';
+import { Race } from '../lib/types';
+import { href } from '../router';
+
+type Tab = 'classement' | 'tendances' | 'records' | 'sessions';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'classement', label: 'Championship' }, { key: 'tendances', label: 'Tendances' },
+  { key: 'records', label: 'Records' }, { key: 'sessions', label: 'Sessions' },
+];
+const SIZES = [{ k: 'all', l: 'Toutes' }, { k: '4', l: '4 pilotes' }, { k: '5', l: '5' }, { k: '6', l: '6' }, { k: '7', l: '7 et +' }];
+
+function readPref<T>(k: string, d: T): T { try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } }
+function writePref(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* indisponible */ } }
+
+function useSessionSizes() {
+  const { byDay } = useStore();
+  return useMemo(() => new Map([...byDay].map(([d, rs]) => [d, new Set(rs.flatMap((r) => r.p)).size])), [byDay]);
+}
+const sizeOk = (size: number, f: string) => f === 'all' || (f === '7' ? size >= 7 : size === Number(f));
+
+export function Stats({ tab: tabParam }: { tab?: string }) {
+  const tab = (TABS.find((t) => t.key === tabParam)?.key ?? 'classement') as Tab;
+  return (
+    <div className="page">
+      <header className="page-head">
+        <h1>Statistiques</h1>
+        <div className="tabs-line" role="tablist">
+          {TABS.map((t) => (
+            <button key={t.key} role="tab" aria-selected={t.key === tab} className={t.key === tab ? 'on' : ''}
+              onClick={() => { window.location.hash = `#/stats/${t.key}`; }}>{t.label}</button>
+          ))}
+        </div>
+      </header>
+      {tab === 'classement' && <Classement />}
+      {tab === 'tendances' && <Tendances />}
+      {tab === 'records' && <Records />}
+      {tab === 'sessions' && <Sessions />}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ Championship
+
+function lastN(races: Race[], name: string, n: number) {
+  const mine = races.filter((r) => r.p.includes(name)).slice(-n);
+  return mine.length >= Math.min(n, 3) ? mine.reduce((s, r) => s + r.p.indexOf(name) + 1, 0) / mine.length : null;
+}
+
+function Classement() {
+  const { races, dayList, player, lastSeen } = useStore();
+  const sizes = useSessionSizes();
+  const [kind, setKindRaw] = useState<PeriodKind | 'custom'>(() => readPref('mk.period', 'month'));
+  const [period, setPeriod] = useState<Period>(() => periodOf(kind === 'custom' ? 'month' : kind, dayList.at(-1)!));
+  const [from, setFrom] = useState(() => dayKey(new Date(parseLocal(dayList.at(-1)!).getTime() - 30 * 864e5)));
+  const [to, setTo] = useState(dayList.at(-1)!);
+  const [size, setSize] = useState('all');
+  const [withP, setWithP] = useState('');
+  const [activeOnly, setActiveOnly] = useState<boolean>(() => readPref('mk.activeOnly', true));
+  const setKind = (k: PeriodKind | 'custom') => {
+    setKindRaw(k); writePref('mk.period', k);
+    if (k !== 'custom') setPeriod(periodOf(k, dayList.at(-1)!));
+  };
+  const eff: Period = kind === 'custom' ? { kind: 'all', start: from, end: to + '~', label: `Du ${fmtShort(from)} au ${fmtShort(to)}`, key: from + to } : period;
+  const prev = kind === 'custom' ? null : previousPeriod(period, dayList);
+  const next = kind === 'custom' ? null : nextPeriod(period, dayList);
+  const filter = (p: Period | null) => p ? races.filter((r) => r.day >= p.start && r.day < p.end && sizeOk(sizes.get(r.day)!, size) && (!withP || r.p.includes(withP))) : [];
+  const cur = filter(eff);
+  const rows = useMemo(() => rankedWithEvolution(standings(cur), prev ? standings(filter(prev)) : null), [cur.length, eff.key, prev?.key, size, withP]);
+  const shown = rows.filter((r) => (!activeOnly || player(r.name).active) && r.name !== 'Other');
+  const allNames = [...lastSeen.keys()].filter((n) => n !== 'Other');
+
+  return (
+    <>
+      <Panel>
+        <div className="stack">
+          <div className="seg" role="tablist" aria-label="Période">
+            {(['day', 'month', 'quarter', 'semester', 'year', 'all'] as PeriodKind[]).map((k) => (
+              <button key={k} className={k === kind ? 'on' : ''} onClick={() => setKind(k)}>{PERIOD_LABELS[k]}</button>
+            ))}
+            <button className={kind === 'custom' ? 'on' : ''} onClick={() => setKind('custom')}>Dates</button>
+          </div>
+          <div className="filters">
+            {kind === 'custom' ? (
+              <>
+                <label className="field"><span>Du</span><input id="from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
+                <label className="field"><span>Au</span><input id="to" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
+              </>
+            ) : (
+              <div className="session-head" style={{ minWidth: 240 }}>
+                <button className="iconbtn" disabled={!prev} onClick={() => prev && setPeriod(prev)} aria-label="Période précédente">‹</button>
+                <div className="grow" style={{ alignItems: 'center' }}><b style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', textTransform: 'capitalize' }}>{period.label}</b></div>
+                <button className="iconbtn" disabled={!next} onClick={() => next && setPeriod(next)} aria-label="Période suivante">›</button>
+              </div>
+            )}
+            <label className="field"><span>Taille de session</span>
+              <select id="size" value={size} onChange={(e) => setSize(e.target.value)}>{SIZES.map((s) => <option key={s.k} value={s.k}>{s.l}</option>)}</select>
+            </label>
+            <label className="field"><span>Courses avec</span>
+              <select id="with" value={withP} onChange={(e) => setWithP(e.target.value)}>
+                <option value="">Tout le monde</option>
+                {allNames.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 }}>
+              <input id="active-only" type="checkbox" checked={activeOnly} onChange={(e) => { setActiveOnly(e.target.checked); writePref('mk.activeOnly', e.target.checked); }} style={{ accentColor: 'var(--cyan)', width: 18, height: 18 }} />
+              <span style={{ letterSpacing: '0.08em' }}>Actifs uniquement</span>
+            </label>
+          </div>
+          <span className="hint">{cur.length} courses retenues</span>
+        </div>
+      </Panel>
+
+      {shown.length === 0 ? <Empty>Aucune course ne correspond à ces filtres. Élargis la période ou la taille de session.</Empty> : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th><th className="r">Courses</th>
+                <th className="r">Vict.</th><th className="r hide-sm">Podium</th>
+                <th className="r hide-sm" title="Moyenne sur les 5, 10 et 20 dernières courses de la sélection">5 · 10 · 20 dern.</th><th className="hide-sm">Places</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r, i) => (
+                <tr key={r.name}>
+                  <td className="rank">{i + 1}</td>
+                  <td className="hide-sm"><Delta delta={r.delta} isNew={r.isNew} /></td>
+                  <td><PlayerTag name={r.name} sub={player(r.name).active ? undefined : 'ancien'} /></td>
+                  <td className="r"><b><Avg v={r.avg} /></b></td>
+                  <td className="r num">{r.races}</td>
+                  <td className="r num good">{Math.round((r.wins / r.races) * 100)} %</td>
+                  <td className="r num hide-sm">{Math.round(((r.places[0] + r.places[1] + r.places[2]) / r.races) * 100)} %</td>
+                  <td className="r num hide-sm" style={{ whiteSpace: 'nowrap' }}>
+                    {[5, 10, 20].map((n) => {
+                      const v = lastN(cur, r.name, n);
+                      return <span key={n} className={v === null ? 'muted' : v < r.avg - 0.1 ? 'good' : v > r.avg + 0.1 ? 'bad' : ''} style={{ marginLeft: 8 }}>{v === null ? '–' : fmtAvg(v)}</span>;
+                    })}
+                  </td>
+                  <td className="hide-sm" style={{ minWidth: 100 }}><PlacesBar places={r.places} total={r.races} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="hint">Classement sur les positions relatives du groupe (1 à 4), pas sur le rang affiché par le jeu. Tri : moyenne, puis victoires, puis courses.{prev ? ` ▲▼ par rapport à ${prev.label}.` : ''}</p>
+    </>
+  );
+}
+
+// ------------------------------------------------------------ Tendances
+
+function weekKey(day: string) {
+  const d = parseLocal(day);
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  return dayKey(monday);
+}
+
+function Tendances() {
+  const { races, activeNames, player } = useStore();
+  const ranked = useMemo(() => standings(races).filter((s) => activeNames.includes(s.name)).map((s) => s.name), [races, activeNames]);
+  const [gran, setGran] = useState<'month' | 'week'>('month');
+  const [sel, setSel] = useState<string[]>(() => ranked.slice(0, 3));
+  const toggle = (n: string) => setSel((s) => (s.includes(n) ? s.filter((x) => x !== n) : [...s, n]));
+  const keyOf = gran === 'month' ? (d: string) => monthKey(d) : weekKey;
+  const buckets = [...new Set(races.map((r) => keyOf(r.day)))].slice(gran === 'month' ? -12 : -16);
+  const series = sel.map((name) => {
+    const values: (number | null)[] = [], counts: (number | null)[] = [];
+    for (const b of buckets) {
+      const rs = races.filter((r) => keyOf(r.day) === b && r.p.includes(name));
+      values.push(rs.length >= 3 ? rs.reduce((s, r) => s + r.p.indexOf(name) + 1, 0) / rs.length : null);
+      counts.push(rs.length || null);
+    }
+    return { name, color: player(name).color, values, counts };
+  });
+  const labels = buckets.map((b) => (gran === 'month' ? fmtMonth(b, true) : `sem. ${fmtShort(b)}`));
+  return (
+    <>
+      <div className="filters">
+        <div className="seg">
+          <button className={gran === 'month' ? 'on' : ''} onClick={() => setGran('month')}>12 derniers mois</button>
+          <button className={gran === 'week' ? 'on' : ''} onClick={() => setGran('week')}>16 dernières semaines</button>
+        </div>
+      </div>
+      <div className="chips" role="group" aria-label="Pilotes affichés">
+        {ranked.map((n) => (
+          <button key={n} className="chip" aria-pressed={sel.includes(n)} style={{ '--c': player(n).color } as CSSProperties} onClick={() => toggle(n)}>
+            <span className="dot" />{n}
+          </button>
+        ))}
+      </div>
+      <Panel hud="cyan" title="Position moyenne" aside={<span className="hint">plus haut = meilleur · 3 courses min. par point</span>}>
+        {sel.length === 0 ? <Empty>Choisis au moins un pilote.</Empty> : (
+          <TrendChart labels={labels} series={series} min={1} max={4} invert ticks={[1, 2, 3, 4]} best={sel.length === 1}
+            format={(v) => (Number.isInteger(v) ? String(v) : fmtAvg(v))} height={260} />
+        )}
+      </Panel>
+    </>
+  );
+}
+
+// ------------------------------------------------------------ Records
+
+function runDates(r: Run) {
+  return r.start.day === r.end.day ? fmtShort(r.start.day) : `${fmtShort(r.start.day)} → ${fmtShort(r.end.day)}`;
+}
+
+function Board({ title, rows, hud }: { title: string; hud?: 'yellow' | 'red'; rows: { key: string; who?: string; value: React.ReactNode; when: string; whenDay: string }[] }) {
+  return (
+    <Panel hud={hud} title={title} className="board">
+      <ol>
+        {rows.map((r, i) => (
+          <li key={r.key} className={i === 0 ? 'first' : ''}>
+            <span className="board-rank">{i + 1}</span>
+            <span className="board-who">{r.who ? <PlayerTag name={r.who} size={26} /> : <a href={href('session', r.whenDay)}>{r.when}</a>}</span>
+            <span className="board-val">{r.value}</span>
+            {r.who && <a className="board-when" href={href('session', r.whenDay)}>{r.when}</a>}
+          </li>
+        ))}
+      </ol>
+    </Panel>
+  );
+}
+
+function Records() {
+  const { races, runs, days, flagged, replaced } = useStore();
+  const rec = useMemo(() => records(races, runs, days), [races, runs, days]);
+  return (
+    <>
+      <div className="kpis">
+        <Panel><Stat label="Courses" value={<span className="num">{rec.totals.races}</span>} sub={`depuis le ${fmtShort(rec.totals.first!)}`} /></Panel>
+        <Panel><Stat label="Sessions" value={<span className="num">{rec.totals.days}</span>} /></Panel>
+        <Panel><Stat label="Temps de jeu" value={fmtDuration(rec.totals.minutes)} sub="≈ 2,77 min par course" /></Panel>
+      </div>
+      <div className="boards">
+        <Board hud="yellow" title="Victoires d'affilée" rows={rec.winRuns.map((r) => ({ key: r.name + r.start.id, who: r.name, value: <b className="num">{r.length}</b>, when: runDates(r), whenDay: r.start.day }))} />
+        <Board hud="red" title="Dernières places d'affilée" rows={rec.lastRuns.map((r) => ({ key: r.name + r.start.id, who: r.name, value: <b className="num">{r.length}</b>, when: runDates(r), whenDay: r.start.day }))} />
+        <Board hud="yellow" title="Meilleures journées" rows={rec.bestDays.map((d) => ({ key: d.name + d.day, who: d.name, value: <><b><Avg v={d.avg} /></b> <span className="hint">({d.races})</span></>, when: fmtShort(d.day), whenDay: d.day }))} />
+        <Board hud="red" title="Pires journées" rows={rec.worstDays.map((d) => ({ key: d.name + d.day, who: d.name, value: <><b><Avg v={d.avg} /></b> <span className="hint">({d.races})</span></>, when: fmtShort(d.day), whenDay: d.day }))} />
+        <Board hud="yellow" title="Plus de victoires en un jour" rows={rec.mostWins.map((d) => ({ key: d.name + d.day, who: d.name, value: <span className="num"><b>{d.wins}</b> / {d.races}</span>, when: fmtShort(d.day), whenDay: d.day }))} />
+        <Board hud="red" title="Plus de 4e places en un jour" rows={rec.mostLasts.map((d) => ({ key: d.name + d.day, who: d.name, value: <span className="num"><b>{d.lasts}</b> / {d.races}</span>, when: fmtShort(d.day), whenDay: d.day }))} />
+        <Board title="Plus grosses sessions" rows={rec.biggestDays.map((d) => ({ key: d.day, value: <span className="num"><b>{d.races}</b> courses · {fmtDuration(d.minutes)}</span>, when: fmtShort(d.day), whenDay: d.day }))} />
+      </div>
+      <p className="hint">Records de journée : 5 courses minimum dans la journée. Les séries suivent l'ordre chronologique, même à cheval sur plusieurs sessions.</p>
+      <Section title="Saisies à corriger" aside={<span className="hint">{flagged.length} courses écartées · {replaced.length} doubles saisies fusionnées</span>}>
+        {flagged.length === 0 ? <p className="hint">Rien à corriger.</p> : (
+          <div className="table-wrap">
+            <table className="table compact">
+              <thead><tr><th>Date</th><th>Saisie</th><th>Problème</th></tr></thead>
+              <tbody>
+                {[...flagged].reverse().map((f) => (
+                  <tr key={f.ts}>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtShort(f.ts.slice(0, 10))} {f.ts.slice(11, 16).replace(':', 'h')}</td>
+                    <td>{f.p.join(' · ')}</td>
+                    <td className="bad">{f.p.find((n, i) => f.p.indexOf(n) !== i)} saisi deux fois</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="hint">Une course avec le même nom deux fois est exclue des stats : corrige la ligne dans le Sheet, elle sera reprise à la synchro suivante. Deux saisies à moins de 60 secondes : seule la seconde compte.</p>
+      </Section>
+    </>
+  );
+}
+
+// ------------------------------------------------------------ Sessions
+
+function Sessions() {
+  const { byDay, lastSeen } = useStore();
+  const sizes = useSessionSizes();
+  const [withP, setWithP] = useState('');
+  const [size, setSize] = useState('all');
+  const [limit, setLimit] = useState(30);
+  const list = [...byDay].reverse().filter(([d, rs]) => sizeOk(sizes.get(d)!, size) && (!withP || rs.some((r) => r.p.includes(withP))));
+  return (
+    <>
+      <div className="filters">
+        <label className="field"><span>Pilote présent</span>
+          <select id="s-with" value={withP} onChange={(e) => setWithP(e.target.value)}>
+            <option value="">Tout le monde</option>
+            {[...lastSeen.keys()].filter((n) => n !== 'Other').map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Taille de session</span>
+          <select id="s-size" value={size} onChange={(e) => setSize(e.target.value)}>{SIZES.map((s) => <option key={s.k} value={s.k}>{s.l}</option>)}</select>
+        </label>
+        <span className="hint" style={{ alignSelf: 'center' }}>{list.length} sessions</span>
+      </div>
+      {list.length === 0 ? <Empty>Aucune session ne correspond.</Empty> : (
+        <ul className="sessions-list">
+          {list.slice(0, limit).map(([d, rs]) => {
+            const t = standings(rs);
+            return (
+              <li key={d}>
+                <a href={href('session', d)}>
+                  <span style={{ textTransform: 'capitalize' }}><b>{fmtDay(d, false)}</b><span className="sub-num">{d.slice(0, 4)}</span></span>
+                  <span className="num">{rs.length} c.</span>
+                  <span className="sl-players muted">{t.map((s) => s.name).join(', ')}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={t[0].name} size={24} /><b className="gold">{t[0].name}</b></span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {list.length > limit && <button className="btn" onClick={() => setLimit((l) => l + 30)}>Afficher 30 sessions de plus</button>}
+    </>
+  );
+}

@@ -1,10 +1,12 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { loadDataset } from './lib/data';
+import { BadgeBook, computeBadges } from './lib/badges';
 import { allRuns, computeElo, EloResult, groupByDay, lastSeenMap, PlayerDay, playerDays, Run } from './lib/stats';
 import { Dataset, Player, Race } from './lib/types';
 
 export type Store = Dataset & {
   elo: EloResult;
+  badges: BadgeBook;
   runs: Run[];
   days: PlayerDay[];
   byDay: Map<string, Race[]>;
@@ -32,9 +34,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const known = new Map(ds.players.map((p) => [p.name, p]));
     const fallback = (name: string): Player => ({ name, color: '#9AA3B5', active: true });
     const lastSeen = lastSeenMap(ds.races);
+    const elo = computeElo(ds.races);
     return {
       ...ds,
-      elo: computeElo(ds.races),
+      elo,
+      badges: computeBadges(ds.races, elo),
       runs: allRuns(ds.races),
       days: playerDays(ds.races),
       byDay, dayList: [...byDay.keys()],
@@ -46,7 +50,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [ds]);
 
   if (error) return <div className="boot"><p className="boot-title">Chargement impossible</p><p>{error}</p></div>;
-  if (!store) return <div className="boot"><div className="lights"><i /><i /><i /><i /><i /></div><p>Chargement des courses…</p></div>;
+  if (!store) return <div className="boot"><div className="lights" aria-hidden="true"><i /><i /><i /><i /><i /></div><p>Chargement des courses…</p></div>;
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }
 
