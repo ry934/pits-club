@@ -171,6 +171,8 @@ begin
   update players set user_id = auth.uid() where name = player_name and user_id is null;
   if not found then raise exception 'joueur introuvable ou déjà pris'; end if;
 end $$;
+revoke execute on function claim_player(text) from anon, public;
+grant execute on function claim_player(text) to authenticated;
 
 create or replace function current_player_id() returns uuid
 language sql stable security definer set search_path = public as $$
