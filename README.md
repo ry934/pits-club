@@ -11,7 +11,7 @@ Lot 1 du cahier des charges « MK Companion ».
 
 ### 1. Supabase (base de données et comptes)
 1. Créer un compte sur supabase.com, puis un projet gratuit (région Europe, Paris ou Francfort).
-2. SQL Editor : coller et exécuter `supabase/migrations/001_init.sql`, puis `supabase/seed.sql` (historique au 14/10/2026).
+2. SQL Editor > New query : coller `supabase/setup.sql` (schéma + pilotes + secret), remplacer le secret, Run. `seed.sql` reste disponible en secours pour importer l'historique sans le Sheet.
 3. Toujours dans SQL Editor, choisir un secret (une longue phrase aléatoire) et l'enregistrer :
    ```sql
    insert into app_secrets (key, value) values ('sheet_sync', 'REMPLACER-PAR-UN-SECRET-LONG');

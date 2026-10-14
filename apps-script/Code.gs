@@ -51,13 +51,21 @@ function readSheet_(name, src) {
   var out = [];
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
-    if (!(row[0] instanceof Date)) continue;             // en-têtes et lignes vides
+    var ts = parseTs_(row[0]);
+    if (!ts) continue;                                   // en-têtes, lignes vides, lignes de remplissage
     var p = [row[1], row[2], row[3], row[4]].map(function (x) { return String(x || '').trim(); });
     if (p.some(function (x) { return x === ''; })) continue;
-    if (row[0].getFullYear() < 2000) continue;           // lignes de remplissage
-    out.push({ ts: toIso_(row[0]), p: p, src: src });
+    out.push({ ts: ts, p: p, src: src });
   }
   return out;
+}
+
+/** Accepte une vraie date ou un texte « jj/mm/aaaa hh:mm:ss ». Renvoie null sinon. */
+function parseTs_(v) {
+  if (v instanceof Date) return v.getFullYear() >= 2000 ? toIso_(v) : null;
+  var m = String(v || '').match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!m || Number(m[3]) < 2000) return null;
+  return m[3] + '-' + m[2] + '-' + m[1] + ' ' + m[4] + ':' + m[5] + ':' + m[6];
 }
 
 function toIso_(d) {
