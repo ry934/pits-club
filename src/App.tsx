@@ -66,7 +66,7 @@ function Shell() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <BrandMark />
-          <span className="brand-text"><span className="brand-name">Pause Kart</span><span className="brand-sub">Neon Grand Prix</span></span>
+          <span className="brand-text"><span className="brand-name">Pits Club</span><span className="brand-sub">Neon Grand Prix</span></span>
         </a>
         <nav className="nav" aria-label="Sections">{navLinks('')}</nav>
         <div className="sidebar-foot">
@@ -75,7 +75,7 @@ function Shell() {
       </aside>
       <div className="main">
         <header className="topbar">
-          <a className="mobile-brand" href="#/"><BrandMark /><span className="brand-name">Pause Kart</span></a>
+          <a className="mobile-brand" href="#/"><BrandMark /><span className="brand-name">Pits Club</span></a>
           <span className="topbar-title">{TITLES[page] ?? 'Paddock'}</span>
           <div className="topbar-right">
             <SessionChip />

@@ -1,4 +1,4 @@
--- PAUSE KART : installation en un seul passage (Supabase > SQL Editor > New query > coller > Run).
+-- PITS CLUB : installation en un seul passage (Supabase > SQL Editor > New query > coller > Run).
 -- 1) Remplace REMPLACER-PAR-UN-SECRET-LONG tout en bas par une phrase secrète à toi (garde-la : elle servira dans le Sheet).
 -- 2) Lance. Les courses arrivent ensuite via l'Apps Script (installTriggers envoie tout l'historique).
 

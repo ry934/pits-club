@@ -1,4 +1,4 @@
-# Pause Kart
+# Pits Club
 
 App compagnon des sessions de kart du midi : récap de session, classements, fiches pilotes, duels, records.
 Lot 1 du cahier des charges « MK Companion ».
