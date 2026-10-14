@@ -74,15 +74,32 @@ function toIso_(d) {
 
 function prop_(k) {
   var v = PropertiesService.getScriptProperties().getProperty(k);
+  v = v ? String(v).replace(/^[\s"']+|[\s"']+$/g, '') : '';   // espaces, retours à la ligne, guillemets collés par erreur
   if (!v) throw new Error('Propriété de script manquante : ' + k);
   return v;
+}
+
+/** Clé « anon » (JWT, commence par eyJ) : apikey + Authorization. Clé « sb_publishable_ » : apikey seul. */
+function authHeaders_() {
+  var key = prop_('SUPABASE_ANON_KEY');
+  var h = { apikey: key };
+  if (key.indexOf('eyJ') === 0) h.Authorization = 'Bearer ' + key;
+  return h;
+}
+
+/** Diagnostic : vérifie l'URL et la clé sans rien écrire. */
+function testConnexion() {
+  var res = UrlFetchApp.fetch(prop_('SUPABASE_URL') + '/rest/v1/players?select=name&limit=3', { headers: authHeaders_(), muteHttpExceptions: true });
+  var key = prop_('SUPABASE_ANON_KEY');
+  console.log('Clé : ' + key.length + ' caractères, commence par ' + key.slice(0, 6) + '…, finit par …' + key.slice(-4));
+  console.log('Réponse Supabase : ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
 }
 
 function rpc_(fn, body) {
   var res = UrlFetchApp.fetch(prop_('SUPABASE_URL') + '/rest/v1/rpc/' + fn, {
     method: 'post',
     contentType: 'application/json',
-    headers: { apikey: prop_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + prop_('SUPABASE_ANON_KEY') },
+    headers: authHeaders_(),
     payload: JSON.stringify(body),
     muteHttpExceptions: true
   });
