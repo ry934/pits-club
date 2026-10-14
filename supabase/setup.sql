@@ -225,10 +225,11 @@ create policy "edit own take before deadline" on takes for update
          and (now() at time zone 'Europe/Paris') < (day + time '13:00'))
   with check (author_id = current_player_id() and status = 'pending' and not revealed);
 
--- Qui a posté un Take aujourd'hui (sans le contenu)
-create or replace view takes_posted as
-  select day, author_id from takes;
-grant select on takes_posted to anon, authenticated;
+-- Qui a posté un Take ce jour-là (sans le contenu)
+create or replace function takes_posted(on_day date)
+returns table (author_id uuid) language sql stable security definer set search_path = public as $$
+  select author_id from takes where day = on_day
+$$;
 
 -- Pilotes et couleurs (repris de l'onglet Réglages)
 insert into players (name, active, color) values
