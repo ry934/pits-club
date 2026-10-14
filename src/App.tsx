@@ -39,12 +39,13 @@ function SessionChip() {
 
 function Shell() {
   const route = useRoute();
-  const { source } = useStore();
+  const { source, races } = useStore();
   const [raw = 'paddock', a, b] = route;
   const page = ALIASES[raw] ?? raw;
   const section = page === 'session' ? 'paddock' : page === 'pilote' ? 'trophees' : page;
   let body;
-  switch (page) {
+  if (races.length === 0 && page !== 'profil') body = <Waiting />;
+  else switch (page) {
     case 'session': body = <Session day={a} />; break;
     case 'stats': body = <Stats tab={raw === 'records' ? 'records' : a} />; break;
     case 'rivalites': body = <Rivalites a={a} b={b} />; break;
@@ -85,6 +86,26 @@ function Shell() {
         <main className="content">{body}</main>
       </div>
       <nav className="bottomnav" aria-label="Sections">{navLinks('')}</nav>
+    </div>
+  );
+}
+
+/** Base branchée mais encore vide : les courses arrivent avec la synchro du Google Sheet. */
+function Waiting() {
+  const { reload } = useStore();
+  return (
+    <div className="page">
+      <div className="chamfer-frame">
+        <section className="hero chamfer" style={{ gridTemplateColumns: '1fr' }}>
+          <span className="speed" aria-hidden="true" />
+          <div className="hero-body">
+            <span className="label cyan">Grille de départ</span>
+            <span className="hero-name">En attente des courses</span>
+            <span className="muted">L'app est en ligne et connectée à la base. Aucune course n'y est encore enregistrée : elles arriveront dès que la synchro du Google Sheet sera lancée.</span>
+            <div><button className="btn btn-primary" onClick={reload}>Recharger</button></div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
