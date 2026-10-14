@@ -2,6 +2,7 @@ import { CSSProperties, useEffect, useMemo, useState } from 'react';
 import { Avatar, CountUp, Crown, Empty, FormChips, Panel, PlayerTag, Section } from '../components/ui';
 import { Emblem } from '../components/Emblem';
 import { BADGE, RARITY_LABEL } from '../lib/badges';
+import { rarityClass } from './Trophees';
 import { dailyChallenge, horoscope, nextDeadline, rivalryOfTheDay } from '../lib/daily';
 import { dayKey, fmtAvg, fmtDay, fmtMonth, fmtShort, fmtTime, monthKey, sessionSummary, standings } from '../lib/stats';
 import { href } from '../router';
@@ -110,7 +111,7 @@ export function Paddock() {
                   <li key={k} className={e.day === lastDay ? 'fresh' : ''}>
                     <Emblem badge={BADGE[e.badge]} size={36} />
                     <span>
-                      <b>{e.player}</b> débloque <b className={`rc-${BADGE[e.badge].family === 'infamie' ? 'infamy' : BADGE[e.badge].rarity}`} style={{ color: 'var(--rc)' }}>{BADGE[e.badge].name}</b>
+                      <b>{e.player}</b> débloque <b className={rarityClass(BADGE[e.badge])} style={{ color: 'var(--rc)' }}>{BADGE[e.badge].name}</b>
                       <span className="sub-num">{RARITY_LABEL[BADGE[e.badge].rarity]}{e.detail ? ` · ${e.detail}` : ''}</span>
                     </span>
                     <a className="hint" href={href('session', e.day)}>{fmtShort(e.day)}</a>

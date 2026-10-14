@@ -10,7 +10,7 @@ const book = computeBadges(races, computeElo(races));
 
 describe('badges', () => {
   it('se calculent sur l\'historique', () => {
-    const summary = BADGES.filter((b) => !b.needsTakes).map((b) => {
+    const summary = BADGES.filter((b) => !b.pending).map((b) => {
       const ev = book.events.filter((e) => e.badge === b.id);
       return `${b.id}: ${ev.length} fois, ${new Set(ev.map((e) => e.player)).size} pilotes`;
     });

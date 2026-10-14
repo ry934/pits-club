@@ -1,13 +1,13 @@
 import { CSSProperties, useMemo, useState } from 'react';
 import { Emblem } from '../components/Emblem';
 import { Avatar, Empty, FormChips, Panel, PlacesBar } from '../components/ui';
-import { BADGES, BadgeDef, FAMILY_LABEL, Family, Holding, Rarity, RARITY_LABEL } from '../lib/badges';
+import { BADGES, BadgeDef, FAMILY_LABEL, Family, Holding, isInfamy, Rarity, RARITY_LABEL } from '../lib/badges';
 import { fmtAvg, fmtShort, standings } from '../lib/stats';
 import { SETTINGS } from '../lib/types';
 import { href } from '../router';
 import { useStore } from '../store';
 
-export const rarityClass = (b: BadgeDef) => `rc-${b.family === 'infamie' || b.id === 'false-prophet' ? 'infamy' : b.rarity}`;
+export const rarityClass = (b: BadgeDef) => `rc-${isInfamy(b) ? 'infamy' : b.rarity}`;
 
 export function Trophees({ tab }: { tab?: string }) {
   const t = tab === 'pilotes' ? 'pilotes' : 'badges';
@@ -107,7 +107,7 @@ function Gallery() {
                 <span className="badge-name">{b.name}</span>
                 <span className="badge-desc">{b.desc}</span>
                 <span className="badge-foot">
-                  {b.needsTakes ? <span>Arrive avec les Takes</span>
+                  {b.pending ? <span>{b.pending}</span>
                     : who ? (it.unlocked
                       ? <span className="gold">Débloqué le {fmtShort(it.h!.first)}{it.h!.count > 1 ? ` · ×${it.h!.count}` : ''}</span>
                       : b.target ? <><span className="progress" aria-hidden="true"><span style={{ width: `${pct * 100}%` }} /></span><span>Meilleur : {it.prog} / {b.target}</span></> : <span>Pas encore débloqué</span>)
@@ -128,11 +128,11 @@ function Detail({ badge, who, holders, onClose }: { badge: BadgeDef; who: string
       <div className={`badge-detail chamfer ${rarityClass(badge)}`}>
         <Emblem badge={badge} size={120} />
         <div className="stack">
-          <span className="rarity" style={{ width: 'fit-content' }}>{RARITY_LABEL[badge.rarity]} · {FAMILY_LABEL[badge.family]}</span>
+          <span className="rarity" style={{ width: 'fit-content' }}>{RARITY_LABEL[badge.rarity]} · {FAMILY_LABEL[badge.family]} · {badge.kind}</span>
           <h2 style={{ fontSize: '1.6rem' }}>{badge.name}</h2>
           <span>{badge.desc}</span>
           <span className="muted"><b style={{ color: 'var(--white)' }}>Condition :</b> {badge.condition}</span>
-          {badge.needsTakes ? <span className="hint">Se débloquera dès que les vrais Takes seront en place.</span> : holders.length > 0 ? (
+          {badge.pending ? <span className="hint">{badge.pending}.</span> : holders.length > 0 ? (
             <div className="holders">
               {holders.map((x) => (
                 <a key={x.name} className="chip" style={{ '--c': 'var(--rc)', opacity: who && who !== x.name ? 0.5 : 1 } as CSSProperties} href={href('pilote', x.name)}>
