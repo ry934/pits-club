@@ -75,6 +75,11 @@ export function LoginScreen() {
           <label className="field"><span>Mot de passe</span>
             <input id="password" type="password" autoComplete={mode === 'in' ? 'current-password' : 'new-password'} minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === 'up' ? '8 caractères minimum' : ''} />
           </label>
+          {mode === 'up' && (
+            <p className="gate-tip" role="note">
+              <b>Conseil des dev'</b> : ne mettez pas le même mot de passe que celui du compte où dorment vos bitcoins. Pits Club a été codé entre deux courses, pas par la NASA.
+            </p>
+          )}
           <button className="btn btn-primary gate-submit" type="submit" disabled={busy}>
             {busy ? 'Un instant…' : mode === 'in' ? 'Se connecter' : 'Créer mon compte'}
           </button>

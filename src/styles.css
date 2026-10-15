@@ -833,3 +833,6 @@ tr.is-banned td:last-child { opacity: 1; }
 .lex-flash { box-shadow: 0 0 0 2px var(--cyan), 0 0 22px rgba(40, 231, 255, 0.35); }
 .th-help { border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 0; }
 .th-help span { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; font-size: 0.6rem; margin-left: 4px; }
+
+.gate-tip { margin: 0; padding: 10px 12px; border-left: 3px solid var(--yellow); background: rgba(255, 216, 77, 0.07); border-radius: 0 4px 4px 0; font-size: 0.84rem; line-height: 1.45; color: var(--silver); }
+.gate-tip b { color: var(--yellow); font-family: var(--font-display); letter-spacing: 0.04em; }
