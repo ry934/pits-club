@@ -32,7 +32,10 @@ export function Session({ day: dayParam }: { day?: string }) {
         </div>
         {next ? <a className="iconbtn" href={href('session', next)} aria-label="Session suivante">›</a> : <span className="iconbtn off">›</span>}
       </header>
-      {state === 'live' && <CloseSessionButton day={day} />}
+      <div className="btn-row">
+        {day === dayList.at(-1) && <a className={`btn ${state === 'live' ? 'btn-primary' : ''} live-link`} href="#/direct">Mode direct</a>}
+        {state === 'live' && <CloseSessionButton day={day} />}
+      </div>
 
       <div className="kpis">
         <Panel><Stat label="Courses" value={<CountUp value={s.races.length} />} /></Panel>

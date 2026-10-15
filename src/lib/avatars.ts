@@ -8,6 +8,9 @@ import { Player } from './types';
  */
 export const BUCKET = 'avatars';
 
+// URLs signées gardées en mémoire : les rechargements du direct ne refont pas clignoter les photos.
+const signedCache = new Map<string, { url: string; exp: number }>();
+
 export async function attachAvatarUrls(players: Player[]) {
   const sb = await getSupabase();
   if (!sb) return;
@@ -21,8 +24,13 @@ export async function attachAvatarUrls(players: Player[]) {
     const paths = players.map((p) => p.avatarPath ?? byName.get(p.name.toLowerCase()) ?? null);
     const wanted = [...new Set(paths.filter((x): x is string => !!x))];
     if (!wanted.length) return;
-    const { data: signed } = await sb.storage.from(BUCKET).createSignedUrls(wanted, 60 * 60 * 24);
-    const url = new Map((signed ?? []).filter((s) => s.signedUrl).map((s) => [s.path, s.signedUrl]));
+    const now = Date.now();
+    const missing = wanted.filter((w) => (signedCache.get(w)?.exp ?? 0) <= now);
+    if (missing.length) {
+      const { data: signed } = await sb.storage.from(BUCKET).createSignedUrls(missing, 60 * 60 * 24);
+      for (const x of signed ?? []) if (x.signedUrl && x.path) signedCache.set(x.path, { url: x.signedUrl, exp: now + 20 * 3600e3 });
+    }
+    const url = new Map(wanted.filter((w) => signedCache.has(w)).map((w) => [w, signedCache.get(w)!.url]));
     players.forEach((p, i) => { const path = paths[i]; if (path && url.get(path)) p.avatarUrl = url.get(path)!; });
   } catch {
     /* pas de bucket ou pas de droits : on garde les initiales */

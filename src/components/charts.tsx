@@ -18,10 +18,19 @@ function useWidth(initial: number): [React.RefObject<HTMLDivElement>, number] {
 }
 
 /** Tour par tour : position de chaque pilote à chaque course, avec détail au survol. */
-export function LapChart({ races }: { races: Race[] }) {
+export function LapChart({ races, fill }: { races: Race[]; fill?: boolean }) {
   const { player } = useStore();
   const [hover, setHover] = useState<number | null>(null);
-  const step = 36, left = 34, right = 40, top = 18, row = 40;
+  const box = useRef<HTMLDivElement>(null);
+  const [avail, setAvail] = useState(0);
+  useEffect(() => {
+    if (!fill || !box.current) return;
+    const ro = new ResizeObserver(([e]) => setAvail(e.contentRect.width));
+    ro.observe(box.current);
+    return () => ro.disconnect();
+  }, [fill]);
+  const left = 34, right = 40, top = 18, row = 40;
+  const step = fill && avail ? Math.max(36, Math.min(90, (avail - left - right) / Math.max(1, races.length - 1))) : 36;
   const w = left + right + Math.max(1, races.length - 1) * step;
   const h = top * 2 + row * 3 + 18;
   const x = (i: number) => left + i * step;
@@ -37,7 +46,7 @@ export function LapChart({ races }: { races: Race[] }) {
   const every = races.length > 24 ? 5 : races.length > 12 ? 2 : 1;
   const hr = hover !== null ? races[hover] : null;
   return (
-    <div className="chart chart-scroll" onMouseLeave={() => setHover(null)}>
+    <div className="chart chart-scroll" ref={box} onMouseLeave={() => setHover(null)}>
       <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label={`Positions course par course, ${races.length} courses`}>
         {[1, 2, 3, 4].map((p) => (
           <g key={p}>

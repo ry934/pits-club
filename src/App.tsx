@@ -6,6 +6,7 @@ import { Takes } from './pages/Takes';
 import { Trophees } from './pages/Trophees';
 import { Pilote } from './pages/Pilote';
 import { Profil } from './pages/Profil';
+import { Direct } from './pages/Direct';
 import { useRoute } from './router';
 import { StoreProvider, useStore } from './store';
 import { AuthProvider, useAuth } from './auth';
@@ -33,7 +34,7 @@ function SessionChip() {
   if (last !== today) return <span className="state state-closed">Pas de session<span className="long">&nbsp;aujourd'hui</span></span>;
   const live = sessionState(today, byDay.get(today)!, closedDays) === 'live';
   return (
-    <a href={`#/session/${today}`} className={`state ${live ? 'state-live' : 'state-closed'}`}>
+    <a href={live ? '#/direct' : `#/session/${today}`} className={`state ${live ? 'state-live' : 'state-closed'}`} title={live ? 'Ouvrir le mode direct' : undefined}>
       {live ? 'En course' : <>Terminée<span className="long">&nbsp;· {byDay.get(today)!.length} courses</span></>}
     </a>
   );
@@ -58,6 +59,7 @@ function Shell() {
   const { source, races } = useStore();
   const [raw = 'paddock', a, b] = route;
   const page = ALIASES[raw] ?? raw;
+  if (page === 'direct' && races.length > 0) return <Direct />;
   const section = page === 'session' ? 'paddock' : page === 'pilote' ? 'trophees' : page;
   let body;
   if (races.length === 0 && page !== 'profil') body = <Waiting />;
@@ -87,6 +89,7 @@ function Shell() {
         </a>
         <nav className="nav" aria-label="Sections">{navLinks('')}</nav>
         <div className="sidebar-foot">
+          <a className="btn btn-sm live-link" href="#/direct">Mode direct</a>
           <MeButton />
         </div>
       </aside>
