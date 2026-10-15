@@ -2,6 +2,7 @@ import seed from '../data/seed.json';
 import { cleanRaces } from './stats';
 import { getSupabase } from './supabase';
 import { Dataset, Player, RawRace } from './types';
+import { attachAvatarUrls } from './avatars';
 
 const SRC = { a: 'archive', f: 'form', p: 'app' } as const;
 
@@ -21,15 +22,20 @@ async function fromSupabase(): Promise<Dataset> {
     for (const r of data) raw.push({ ts: String(r.ts).replace(' ', 'T').slice(0, 19), p: [r.p1, r.p2, r.p3, r.p4], src: r.source });
     if (data.length < 1000) break;
   }
-  const [{ data: players, error: e1 }, { data: closures, error: e2 }] = await Promise.all([
-    sb.from('players').select('name,color,active,display_name').order('created_at'),
-    sb.from('session_closures').select('day'),
-  ]);
-  if (e1) throw e1;
+  // avatar_path peut ne pas exister encore (script photos pas lancé) : on retombe sur la liste sans photo.
+  let pl = await sb.from('players').select('id,name,color,active,display_name,avatar_path').order('created_at');
+  if (pl.error) pl = await sb.from('players').select('id,name,color,active,display_name').order('created_at') as typeof pl;
+  const { data: closures, error: e2 } = await sb.from('session_closures').select('day');
+  if (pl.error) throw pl.error;
   if (e2) throw e2;
+  const players: Player[] = (pl.data ?? []).map((p) => ({
+    id: p.id, name: p.name, color: p.color, active: p.active,
+    displayName: p.display_name ?? undefined, avatarPath: (p as { avatar_path?: string }).avatar_path ?? undefined,
+  }));
+  await attachAvatarUrls(players);
   return {
     ...cleanRaces(raw),
-    players: (players ?? []).map((p) => ({ name: p.name, color: p.color, active: p.active, displayName: p.display_name ?? undefined })),
+    players,
     closedDays: new Set((closures ?? []).map((c) => c.day)),
     source: 'live', loadedAt: new Date(),
   };

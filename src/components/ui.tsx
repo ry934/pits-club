@@ -9,9 +9,12 @@ export function initials(name: string) {
 
 export function Avatar({ name, size = 30 }: { name: string; size?: number }) {
   const { player } = useStore();
+  const p = player(name);
+  const [broken, setBroken] = useState(false);
+  const photo = p.avatarUrl && !broken;
   return (
-    <span className="avatar" style={{ '--c': player(name).color, width: size, height: size, fontSize: size * 0.4 } as CSSProperties} aria-hidden="true">
-      {initials(name)}
+    <span className={`avatar ${photo ? 'has-photo' : ''}`} style={{ '--c': p.color, width: size, height: size, fontSize: size * 0.4 } as CSSProperties} aria-hidden="true">
+      {photo ? <img src={p.avatarUrl} alt="" loading="lazy" onError={() => setBroken(true)} /> : initials(name)}
     </span>
   );
 }

@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useAuth } from '../auth';
-import { Panel, PlayerTag } from '../components/ui';
+import { Avatar, Panel, PlayerTag } from '../components/ui';
+import { clearMyAvatar, uploadMyAvatar } from '../lib/avatars';
 import { getSupabase } from '../lib/supabase';
 import { useStore } from '../store';
 import { href } from '../router';
@@ -79,6 +80,7 @@ function MyProfile() {
           </div>
         </div>
       </Panel>
+      {live && <AvatarEditor />}
       {live && <Panel title="Mon pseudo">
         <form className="form" onSubmit={save}>
           <label className="field"><span>Pseudo affiché dans l'app</span>
@@ -93,3 +95,42 @@ function MyProfile() {
   );
 }
 
+
+function AvatarEditor() {
+  const { me } = useAuth();
+  const { player, reload } = useStore();
+  const p = player(me!);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const onFile = async (file?: File) => {
+    if (!file || !p.id) return;
+    if (!/^image\//.test(file.type)) { setMsg('Choisis une image (JPG, PNG ou WebP).'); return; }
+    setBusy(true); setMsg(null);
+    const err = await uploadMyAvatar(p.id, file).catch((e) => String(e?.message ?? e));
+    setBusy(false);
+    if (err) setMsg(/set_avatar|function/i.test(err) ? 'Les photos ne sont pas encore activées dans la base.' : err);
+    else { setMsg('Photo mise à jour.'); reload(); }
+  };
+  const reset = async () => {
+    setBusy(true);
+    const err = await clearMyAvatar();
+    setBusy(false);
+    if (err) setMsg(err); else { setMsg('Photo retirée : retour à la photo par défaut.'); reload(); }
+  };
+  return (
+    <Panel title="Ma photo">
+      <div className="avatar-editor">
+        <Avatar name={me!} size={88} />
+        <div className="stack" style={{ gap: 8 }}>
+          <div className="btn-row">
+            <label className="btn btn-primary" htmlFor="avatar-file" aria-disabled={busy}>{busy ? 'Envoi…' : 'Changer ma photo'}</label>
+            <input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => onFile(e.target.files?.[0])} disabled={busy} />
+            {p.avatarPath && <button className="btn" onClick={reset} disabled={busy}>Revenir à la photo par défaut</button>}
+          </div>
+          <span className="hint">La photo est recadrée en carré et allégée automatiquement. Visible uniquement par les membres connectés.</span>
+          {msg && <p className="form-msg">{msg}</p>}
+        </div>
+      </div>
+    </Panel>
+  );
+}

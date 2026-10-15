@@ -567,3 +567,8 @@ select:hover, input:hover, textarea:hover { border-color: var(--steel); }
 .visitor-text { display: flex; flex-direction: column; gap: 2px; font-size: 0.9rem; }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 520px) { .gate-card { padding: 18px; } .gate-onboard .claim-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.avatar.has-photo { background: var(--c); padding: 2px; }
+.avatar.has-photo img { width: 100%; height: 100%; object-fit: cover; display: block; clip-path: inherit; }
+.avatar-editor { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.avatar-editor input[type='file'] { display: none; }
