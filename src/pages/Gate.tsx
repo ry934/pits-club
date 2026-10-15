@@ -77,7 +77,7 @@ export function LoginScreen() {
           </label>
           {mode === 'up' && (
             <p className="gate-tip" role="note">
-              <b>Conseil des dev'</b> : ne mettez pas le même mot de passe que celui du compte où dorment vos bitcoins. Pits Club a été codé entre deux courses, pas par la NASA.
+              <b>Conseil des dev'</b> : ne mettez pas le même mot de passe que celui du compte où dorment vos bitcoins. Pits Club a été « codé » en mode vibe coding (= codage au ressenti), pas par Elon Musk.
             </p>
           )}
           <button className="btn btn-primary gate-submit" type="submit" disabled={busy}>
