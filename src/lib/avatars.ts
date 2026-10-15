@@ -15,11 +15,14 @@ export async function attachAvatarUrls(players: Player[]) {
   const sb = await getSupabase();
   if (!sb) return;
   try {
-    const { data: defaults } = await sb.storage.from(BUCKET).list('defaults', { limit: 200 });
+    // photos par défaut : dossier « defaults », ou « players/defaults » s'il a été créé au mauvais niveau
     const byName = new Map<string, string>();
-    for (const f of defaults ?? []) {
-      const base = f.name.replace(/\.(jpe?g|png|webp)$/i, '').toLowerCase();
-      if (base !== f.name.toLowerCase()) byName.set(base, `defaults/${f.name}`);
+    for (const folder of ['players/defaults', 'defaults']) {
+      const { data: files } = await sb.storage.from(BUCKET).list(folder, { limit: 200 });
+      for (const f of files ?? []) {
+        const base = f.name.replace(/\.(jpe?g|png|webp)$/i, '').toLowerCase();
+        if (base !== f.name.toLowerCase()) byName.set(base, `${folder}/${f.name}`);
+      }
     }
     const paths = players.map((p) => p.avatarPath ?? byName.get(p.name.toLowerCase()) ?? null);
     const wanted = [...new Set(paths.filter((x): x is string => !!x))];
