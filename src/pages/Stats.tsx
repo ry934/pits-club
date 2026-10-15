@@ -96,7 +96,7 @@ function AvgRace({ rows, who, onPick }: { rows: { name: string; avg: number; rac
           <div className="ar-zones" aria-hidden="true">
             <i className="z-red" style={zone(4, 3)} /><i className="z-mid" style={zone(3, 2)} /><i className="z-green" style={zone(2, 1)} />
             {ticks.map((t) => <b key={t} style={{ left: `${x(t)}%` }} />)}
-            {2.5 <= hi && 2.5 >= lo && <em style={{ left: `${x(2.5)}%` }}><span>hasard 2,5</span></em>}
+            {2.5 <= hi && 2.5 >= lo && <em style={{ left: `${x(2.5)}%` }}><span title="Moyenne qu'on obtiendrait si les places étaient tirées au sort">hasard 2,5</span></em>}
             {lo <= 1.001 && <u />}
           </div>
           {rows.map((r, i) => {
@@ -116,9 +116,58 @@ function AvgRace({ rows, who, onPick }: { rows: { name: string; avg: number; rac
             );
           })}
         </div>
-        <span className="hint">Chaque pilote avance vers la ligne d'arrivée selon sa place moyenne sur la période. {leader ? `${player(leader.name).displayName ?? leader.name} mène la course.` : ''} Clique sur un kart pour afficher sa fiche.</span>
+        <span className="hint">Chaque pilote avance vers la ligne d'arrivée selon sa place moyenne sur la période. {leader ? `${player(leader.name).displayName ?? leader.name} mène la course.` : ''} Clique sur un kart pour afficher sa fiche. <a className="link" href="#lexique" onClick={(e) => { e.preventDefault(); openLexique('hasard'); }}>Que veut dire « hasard 2,5 » ?</a></span>
       </div>
     </Panel>
+  );
+}
+
+
+/** Ouvre le lexique et fait défiler jusqu'à une entrée. */
+function openLexique(entry?: string) {
+  const d = document.getElementById('lexique') as HTMLDetailsElement | null;
+  if (!d) return;
+  d.open = true;
+  const target = (entry && document.getElementById(`lex-${entry}`)) || d;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (entry) { target.classList.add('lex-flash'); setTimeout(() => target.classList.remove('lex-flash'), 1600); }
+}
+
+function Lexique() {
+  return (
+    <details className="panel lexique" id="lexique">
+      <summary><span className="label">Lexique</span><b>Comment lire ces chiffres</b><span className="hint">Tendance, hasard 2,5, cote, position moyenne</span></summary>
+      <div className="lex-grid">
+        <section id="lex-tendance">
+          <h3>Tendance actuelle</h3>
+          <p>Elle dit si un pilote est en train de s'améliorer ou de baisser, indépendamment de son niveau habituel.</p>
+          <p><b>Calcul :</b> on prend sa position moyenne sur ses <b>{TREND_RECENT} dernières courses</b> et on la compare à sa moyenne sur les <b>{TREND_BEFORE} courses d'avant</b> (jusqu'à la fin de la période affichée). L'indice est la différence : moyenne d'avant moins moyenne récente. Positif, le pilote finit plus haut qu'avant.</p>
+          <table className="table compact lex-table">
+            <tbody>
+              <tr><td><span className="trend trend-up2"><i>▲▲</i>Forte progression</span></td><td>au moins 0,5 place gagnée</td></tr>
+              <tr><td><span className="trend trend-up"><i>▲</i>En progression</span></td><td>de 0,25 à 0,5 place gagnée</td></tr>
+              <tr><td><span className="trend trend-flat"><i>▬</i>Stable</span></td><td>moins de 0,25 place d'écart</td></tr>
+              <tr><td><span className="trend trend-down"><i>▼</i>En régression</span></td><td>de 0,25 à 0,5 place perdue</td></tr>
+              <tr><td><span className="trend trend-down2"><i>▼▼</i>En chute</span></td><td>au moins 0,5 place perdue</td></tr>
+            </tbody>
+          </table>
+          <p className="hint">Exemple : 2,10 sur les 10 dernières courses contre 2,45 avant, soit +0,35 : « en progression ». Il faut au moins {TREND_RECENT + 10} courses pour afficher une tendance. Sous 0,25 place, l'écart vient le plus souvent du hasard d'une petite série.</p>
+        </section>
+        <section id="lex-hasard">
+          <h3>Hasard 2,5</h3>
+          <p>C'est la position moyenne qu'obtiendrait un pilote si les places de chaque course étaient <b>tirées au sort</b> : une chance sur quatre d'être 1er, 2e, 3e ou 4e, soit (1 + 2 + 3 + 4) ÷ 4 = <b>2,5</b>.</p>
+          <p>À gauche de la ligne pointillée (au-dessus de 2,5), un pilote fait moins bien que le hasard ; à droite (en dessous de 2,5), il fait mieux. Même idée pour les pourcentages de la fiche : 25 % de victoires, 50 % de top 2 et 25 % de dernières places, c'est ce que donnerait le tirage au sort.</p>
+        </section>
+        <section id="lex-position">
+          <h3>Position moyenne</h3>
+          <p>La moyenne des places obtenues, de 1 (toujours premier) à 4 (toujours dernier). Plus elle est basse, mieux c'est. Les places sont celles du groupe de 4 joueurs humains, pas le rang affiché par le jeu.</p>
+        </section>
+        <section id="lex-cote">
+          <h3>Cote</h3>
+          <p>Un indice de niveau inspiré des échecs (Elo), départ à 1500. Après chaque course, chaque pilote gagne ou perd des points contre chacun des 3 autres, d'autant plus que le résultat est inattendu : battre un pilote mieux coté rapporte plus que battre un pilote moins bien coté. Le chiffre en couleur à côté est le gain ou la perte sur la période.</p>
+        </section>
+      </div>
+    </details>
   );
 }
 
@@ -210,7 +259,7 @@ function Classement() {
                   <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th>
                   <th className="r" title="Cote Elo en fin de période, et son évolution sur la période">Cote</th><th className="r">Courses</th>
                   <th className="r">Vict.</th><th className="r hide-sm">Podium</th>
-                  <th className="hide-sm" title={`${TREND_RECENT} dernières courses comparées aux ${TREND_BEFORE} précédentes, à la fin de la période`}>Tendance</th><th className="hide-sm">Places</th>
+                  <th className="hide-sm" title={`${TREND_RECENT} dernières courses comparées aux ${TREND_BEFORE} précédentes, à la fin de la période`}><button type="button" className="th-help" onClick={(e) => { e.stopPropagation(); openLexique('tendance'); }}>Tendance <span aria-hidden="true">?</span></button></th><th className="hide-sm">Places</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,7 +282,9 @@ function Classement() {
           </div>
         )}
       </Section>
-      <p className="hint">Classement sur les positions relatives du groupe (1 à 4). Tri : moyenne, puis victoires, puis courses. Clique sur un pilote pour afficher sa fiche. Tendance : {TREND_RECENT} dernières courses comparées aux {TREND_BEFORE} précédentes (écart d'au moins 0,25 place pour parler de progression ou de régression).{prev ? ` ▲▼ par rapport à ${prev.label}.` : ''}</p>
+      <p className="hint">Tri : moyenne, puis victoires, puis courses. Clique sur un pilote pour afficher sa fiche.{prev ? ` ▲▼ : évolution de place par rapport à ${prev.label}.` : ''} <a className="link" href="#lexique" onClick={(e) => { e.preventDefault(); openLexique(); }}>Comment lire ces chiffres</a></p>
+
+      <Lexique />
     </>
   );
 }

@@ -817,3 +817,19 @@ tr.is-banned td:last-child { opacity: 1; }
   .ar-ticks span { font-size: 0.68rem; }
   .ar-axis-l { display: none; }
 }
+
+/* ------------------------------------------------------------ lexique */
+.lexique { padding: 0; }
+.lexique summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 14px 16px; }
+.lexique summary::-webkit-details-marker { display: none; }
+.lexique summary::after { content: '+'; margin-left: auto; font: 700 1.2rem/1 var(--font-display); color: var(--cyan); }
+.lexique[open] summary::after { content: '–'; }
+.lexique summary b { font-family: var(--font-display); letter-spacing: 0.04em; }
+.lex-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; padding: 0 16px 16px; }
+.lex-grid section { background: var(--space-2); border: 1px solid var(--edge); border-radius: 4px; padding: 14px; transition: box-shadow 0.3s; scroll-margin-top: 80px; }
+.lex-grid h3 { font-size: 0.95rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; color: var(--cyan); }
+.lex-grid p { margin: 0 0 8px; font-size: 0.92rem; line-height: 1.5; }
+.lex-table td { font-size: 0.85rem; }
+.lex-flash { box-shadow: 0 0 0 2px var(--cyan), 0 0 22px rgba(40, 231, 255, 0.35); }
+.th-help { border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 0; }
+.th-help span { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; font-size: 0.6rem; margin-left: 4px; }
