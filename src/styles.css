@@ -772,3 +772,48 @@ tr.is-banned td:last-child { opacity: 1; }
   .form-cell { flex-basis: 34px; min-width: 34px; }
   .form-cell small { display: none; }
 }
+
+/* ------------------------------------------------------------ course à la moyenne */
+.seg-sm button { padding: 5px 10px; min-height: 26px; font-size: 0.72rem; }
+.ar { display: flex; flex-direction: column; gap: 8px; }
+.ar-axis { display: grid; grid-template-columns: 30px 1fr; position: relative; height: 22px; }
+.ar-axis-l, .ar-axis-r { position: absolute; top: -2px; font: 700 0.62rem/1 var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel); }
+.ar-axis-l { left: 42px; } .ar-axis-r { right: 0; color: var(--green); }
+.ar-ticks { grid-column: 2; position: relative; margin: 0 22px 0 6px; }
+.ar-ticks span { position: absolute; bottom: 0; transform: translateX(-50%); font: 700 0.8rem/1 var(--font-mono); color: var(--steel); }
+.ar-track { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+.ar-zones { position: absolute; inset: 0 22px 0 36px; pointer-events: none; border-radius: 4px; overflow: hidden;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 14px), #141830; }
+.ar-zones i { position: absolute; top: 0; bottom: 0; }
+.ar-zones .z-red { background: linear-gradient(90deg, rgba(255, 64, 87, 0.16), rgba(255, 64, 87, 0.04)); }
+.ar-zones .z-mid { background: rgba(255, 216, 77, 0.03); }
+.ar-zones .z-green { background: linear-gradient(90deg, rgba(73, 245, 161, 0.04), rgba(73, 245, 161, 0.16)); }
+.ar-zones b { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(146, 155, 184, 0.16); }
+.ar-zones em { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(255, 216, 77, 0.55); }
+.ar-zones em span { position: absolute; bottom: 4px; left: 6px; font: 600 0.6rem/1 var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 216, 77, 0.8); white-space: nowrap; font-style: normal; }
+.ar-zones u { position: absolute; right: 0; top: 0; bottom: 0; width: 12px; background: repeating-conic-gradient(var(--white) 0 25%, #101321 0 50%) 0 0 / 12px 12px; opacity: 0.85; }
+.ar-lane { position: relative; display: grid; grid-template-columns: 30px 1fr; align-items: center; height: 40px; padding: 0 22px 0 6px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: inherit; }
+.ar-lane::after { content: ''; position: absolute; left: 36px; right: 22px; bottom: -3px; border-bottom: 1px dashed rgba(146, 155, 184, 0.12); }
+.ar-rank { font: 800 0.95rem/1 var(--font-display); color: var(--steel); text-align: center; z-index: 1; }
+.ar-lane.sel .ar-rank { color: var(--cyan); }
+.ar-trail { position: absolute; left: 36px; top: 50%; height: 6px; margin-top: -3px; width: calc((100% - 58px) * var(--x) / 100); border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 70%, transparent)); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent);
+  transition: width 1s cubic-bezier(.2,.8,.2,1); }
+.ar-kart { position: absolute; top: 50%; left: calc(36px + (100% - 58px) * var(--x) / 100); transform: translate(calc(-100% + 15px), -50%); display: flex; align-items: center; gap: 8px; flex-direction: row;
+  transition: left 1s cubic-bezier(.2,.8,.2,1); z-index: 2; }
+.ar-kart .avatar { box-shadow: 0 0 0 2px var(--c), 0 0 14px color-mix(in srgb, var(--c) 60%, transparent); border-radius: 50%; }
+.ar-kart.ar-right { flex-direction: row-reverse; transform: translate(-15px, -50%); }
+.ar-pilot { position: relative; display: inline-flex; }
+.ar-tag { display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; border-radius: 3px; background: rgba(16, 19, 33, 0.85); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); white-space: nowrap; }
+.ar-tag b { font: 700 0.82rem/1 var(--font-display); letter-spacing: 0.03em; }
+.ar-tag .num { font-size: 0.8rem; color: var(--steel); }
+.ar-crown { position: absolute; top: -9px; right: -6px; color: var(--yellow); font-size: 0.8rem; text-shadow: 0 0 8px var(--yellow); }
+.ar-lane:hover .ar-tag, .ar-lane.sel .ar-tag { background: color-mix(in srgb, var(--c) 30%, #101321); }
+.ar-lane.sel .ar-trail { height: 8px; margin-top: -4px; }
+.ar-lane:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { .ar-trail, .ar-kart { transition: none; } }
+@media (max-width: 640px) {
+  .ar-tag b { max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
+  .ar-ticks span { font-size: 0.68rem; }
+  .ar-axis-l { display: none; }
+}

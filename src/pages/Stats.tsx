@@ -1,4 +1,4 @@
-import { CSSProperties, useMemo, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useState } from 'react';
 import { AvgBars, TrendChart } from '../components/charts';
 import { Avg, Avatar, Cote, Delta, Empty, Panel, PlacesBar, PlayerTag, Pos, Section, Stat } from '../components/ui';
 import { useAuth } from '../auth';
@@ -59,6 +59,66 @@ function TrendBadge({ t }: { t: Trend | null }) {
     <span className={`trend trend-${t.level}`} title={`${fmtAvg(t.recent)} sur les ${TREND_RECENT} dernières courses, contre ${fmtAvg(t.before)} sur les ${TREND_BEFORE} précédentes`}>
       <i aria-hidden="true">{arrow}</i>{t.label}
     </span>
+  );
+}
+
+
+/** La course à la moyenne : chaque pilote est un kart placé sur une piste qui va de 4 (départ) à 1 (arrivée). */
+function AvgRace({ rows, who, onPick }: { rows: { name: string; avg: number; races: number }[]; who: string; onPick: (n: string) => void }) {
+  const { player } = useStore();
+  const [zoom, setZoom] = useState(true);
+  const [go, setGo] = useState(false);
+  useEffect(() => { setGo(false); const t = setTimeout(() => setGo(true), 60); return () => clearTimeout(t); }, [rows.length, zoom]);
+  if (rows.length < 2) return null;
+  const avgs = rows.map((r) => r.avg);
+  const lo = zoom ? Math.max(1, Math.floor((Math.min(...avgs) - 0.15) * 4) / 4) : 1;   // meilleur (droite)
+  const hi = zoom ? Math.min(4, Math.ceil((Math.max(...avgs) + 0.15) * 4) / 4) : 4;    // moins bon (gauche)
+  const x = (v: number) => ((hi - v) / (hi - lo)) * 100;
+  const step = hi - lo > 1.5 ? 0.5 : 0.25;
+  const ticks: number[] = [];
+  for (let v = hi; v >= lo - 1e-9; v -= step) ticks.push(Math.round(v * 100) / 100);
+  const zone = (a: number, b: number) => ({ left: `${x(Math.min(hi, a))}%`, width: `${Math.max(0, x(Math.max(lo, b)) - x(Math.min(hi, a)))}%` });
+  const leader = rows[0];
+  return (
+    <Panel hud="yellow" title="La course à la moyenne" className="avg-race" aside={
+      <div className="seg seg-sm" role="group" aria-label="Échelle">
+        <button className={zoom ? 'on' : ''} onClick={() => setZoom(true)}>Zoom</button>
+        <button className={!zoom ? 'on' : ''} onClick={() => setZoom(false)}>1 à 4</button>
+      </div>
+    }>
+      <div className="ar">
+        <div className="ar-axis">
+          <span className="ar-axis-l">◀ moins bon</span>
+          <div className="ar-ticks">{ticks.map((t) => <span key={t} style={{ left: `${x(t)}%` }}>{fmtAvg(t).replace(/,?0+$/, '').replace(/,$/, '') || '0'}</span>)}</div>
+          <span className="ar-axis-r">meilleur ▶</span>
+        </div>
+        <div className="ar-track">
+          <div className="ar-zones" aria-hidden="true">
+            <i className="z-red" style={zone(4, 3)} /><i className="z-mid" style={zone(3, 2)} /><i className="z-green" style={zone(2, 1)} />
+            {ticks.map((t) => <b key={t} style={{ left: `${x(t)}%` }} />)}
+            {2.5 <= hi && 2.5 >= lo && <em style={{ left: `${x(2.5)}%` }}><span>hasard 2,5</span></em>}
+            {lo <= 1.001 && <u />}
+          </div>
+          {rows.map((r, i) => {
+            const pos = x(r.avg);
+            const c = player(r.name).color;
+            const sel = r.name === who;
+            return (
+              <button key={r.name} type="button" className={`ar-lane ${sel ? 'sel' : ''}`} onClick={() => onPick(r.name)} style={{ '--c': c, '--x': go ? pos : 0, transitionDelay: `${i * 60}ms` } as CSSProperties}
+                aria-label={`${player(r.name).displayName ?? r.name} : ${fmtAvg(r.avg)} de moyenne, ${i + 1}e`}>
+                <span className="ar-rank num">{i + 1}</span>
+                <span className="ar-trail" style={{ transitionDelay: `${i * 60}ms` }} />
+                <span className={`ar-kart ${pos < 28 ? 'ar-right' : ''}`} style={{ transitionDelay: `${i * 60}ms` }}>
+                  <span className="ar-tag"><b>{player(r.name).displayName ?? r.name}</b><span className="num">{fmtAvg(r.avg)}</span></span>
+                  <span className="ar-pilot"><Avatar name={r.name} size={30} />{i === 0 && <span className="ar-crown" aria-hidden="true">★</span>}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <span className="hint">Chaque pilote avance vers la ligne d'arrivée selon sa place moyenne sur la période. {leader ? `${player(leader.name).displayName ?? leader.name} mène la course.` : ''} Clique sur un kart pour afficher sa fiche.</span>
+      </div>
+    </Panel>
   );
 }
 
@@ -138,6 +198,8 @@ function Classement() {
       {sheet ? <SheetView s={sheet} periodLabel={eff.label} trend={trendOf(who, races, endDay)} /> : (
         <Panel><p className="muted" style={{ margin: 0 }}>{player(who).displayName ?? who} n'a pas couru sur cette période. Choisis une autre période ou un autre pilote.</p></Panel>
       )}
+
+      <AvgRace rows={shown} who={who} onPick={pick} />
 
       <Section title={`Classement · ${eff.label}`}>
         {shown.length === 0 ? <Empty>Aucune course sur cette période.</Empty> : (
