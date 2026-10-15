@@ -28,7 +28,7 @@ const TONES: { k: AppSettings['bot_tone']; label: string; desc: string }[] = [
 ];
 
 export function Admin() {
-  const { admin, live } = useAuth();
+  const { admin, live, me } = useAuth();
   const store = useStore();
   const { settings, loaded, reload } = useSettings();
   const [local, setLocal] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -194,17 +194,21 @@ export function Admin() {
         )}
       </Panel>
 
-      <Panel title="Admins">
+      <Panel title="Admins" aside={<span className="hint">{admins.length} admin{admins.length > 1 ? 's' : ''}</span>}>
         <div className="stack">
-          <span className="hint">Les admins accèdent à ce back-office. Seuls les pilotes qui ont créé leur compte apparaissent.</span>
+          <span className="hint">Seuls les admins voient le bouton Back-office et peuvent modifier ces réglages ; pour tous les autres, la page est fermée. Clique sur un pilote pour le nommer admin ou lui retirer ce rôle. Seuls les pilotes qui ont créé leur compte apparaissent.</span>
           <div className="chips">
-            {accounts.map((a) => {
+            {[...accounts].sort((x, y) => Number(admins.includes(y.user_id)) - Number(admins.includes(x.user_id)) || x.name.localeCompare(y.name)).map((a) => {
               const on = admins.includes(a.user_id);
+              const self = a.name === me;
+              const label = store.player(a.name).displayName ? `${store.player(a.name).displayName} (${a.name})` : a.name;
               return (
-                <button key={a.name} type="button" className="chip" aria-pressed={on} onClick={async () => {
-                  const { error } = await (await getSupabase())!.rpc('admin_set_admin', { p_player: a.name, p_on: !on });
-                  if (error) setErr(error.message); else loadAll();
-                }}><span className="dot" style={{ background: store.player(a.name).color }} />{a.name}{on ? ' · admin' : ''}</button>
+                <button key={a.name} type="button" className={`chip ${on ? 'chip-admin' : ''}`} aria-pressed={on} disabled={self}
+                  title={self ? 'Tu ne peux pas te retirer toi-même le rôle d\'admin' : on ? 'Retirer le rôle d\'admin' : 'Nommer admin'}
+                  onClick={async () => {
+                    const { error } = await (await getSupabase())!.rpc('admin_set_admin', { p_player: a.name, p_on: !on });
+                    if (error) setErr(error.message); else { setSaved(on ? `${label} n'est plus admin` : `${label} est admin`); loadAll(); }
+                  }}><span className="dot" style={{ background: store.player(a.name).color }} />{label}{on ? ' · admin' : ''}{self ? ' · toi' : ''}</button>
               );
             })}
           </div>
