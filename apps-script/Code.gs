@@ -92,7 +92,7 @@ function testConnexion() {
   var res = UrlFetchApp.fetch(prop_('SUPABASE_URL') + '/rest/v1/players?select=name&limit=3', { headers: authHeaders_(), muteHttpExceptions: true });
   var key = prop_('SUPABASE_ANON_KEY');
   console.log('Clé : ' + key.length + ' caractères, commence par ' + key.slice(0, 6) + '…, finit par …' + key.slice(-4));
-  console.log('Réponse Supabase : ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+  console.log('Réponse Supabase : ' + res.getResponseCode() + (res.getResponseCode() === 200 ? ' (connexion OK ; la liste peut être vide, les données sont réservées aux membres connectés)' : ' ' + res.getContentText().slice(0, 200)));
 }
 
 function rpc_(fn, body) {

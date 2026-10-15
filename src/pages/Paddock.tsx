@@ -31,7 +31,7 @@ export function Countdown({ to }: { to: Date }) {
 
 export function Paddock() {
   const { races, byDay, dayList, elo, activeNames, player, badges } = useStore();
-  const { me, live, session } = useAuth();
+  const { me } = useAuth();
   const today = dayKey(new Date());
   const lastDay = dayList.at(-1)!;
   const month = monthKey(lastDay);
@@ -49,9 +49,6 @@ export function Paddock() {
 
   return (
     <div className="page">
-      {live && session && !me && (
-        <div className="notice"><b>Inscription</b><span>Il te reste une étape : <a className="link" href="#/profil">choisis le pilote qui te correspond</a> pour retrouver ton paddock personnel.</span></div>
-      )}
       {me && (
         <>
           <MyPaddock name={me} />

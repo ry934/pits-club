@@ -9,6 +9,7 @@ import { Profil } from './pages/Profil';
 import { useRoute } from './router';
 import { StoreProvider, useStore } from './store';
 import { AuthProvider, useAuth } from './auth';
+import { GateLoading, LoginScreen, Onboarding } from './pages/Gate';
 import { Avatar, BrandMark } from './components/ui';
 import { dayKey, sessionState } from './lib/stats';
 
@@ -39,8 +40,9 @@ function SessionChip() {
 }
 
 function MeButton({ compact }: { compact?: boolean }) {
-  const { me, live, session } = useAuth();
+  const { me, visitor } = useAuth();
   const { player } = useStore();
+  if (visitor) return <a className="btn btn-sm me-chip" href="#/profil"><span>Visiteur</span></a>;
   if (me) {
     return (
       <a className="btn btn-sm me-chip" href="#/profil" aria-label="Mon profil">
@@ -48,8 +50,7 @@ function MeButton({ compact }: { compact?: boolean }) {
       </a>
     );
   }
-  const label = !live ? (compact ? 'Démo' : 'Mode démo') : session ? 'Choisir mon pilote' : 'Connexion';
-  return <a className="btn btn-sm" href="#/profil">{label}</a>;
+  return <a className="btn btn-sm" href="#/profil">{compact ? 'Profil' : 'Mon profil'}</a>;
 }
 
 function Shell() {
@@ -126,5 +127,14 @@ function Waiting() {
 }
 
 export default function App() {
-  return <AuthProvider><StoreProvider><Shell /></StoreProvider></AuthProvider>;
+  return <AuthProvider><Gate /></AuthProvider>;
+}
+
+/** Rien n'est chargé ni affiché avant la connexion et le choix d'un profil (pilote ou visiteur). */
+function Gate() {
+  const { live, loading, session, me, visitor } = useAuth();
+  if (live && loading) return <GateLoading />;
+  if (live && !session) return <LoginScreen />;
+  if (!me && !visitor) return <Onboarding />;
+  return <StoreProvider><Shell /></StoreProvider>;
 }
