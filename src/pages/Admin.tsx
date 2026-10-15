@@ -39,8 +39,6 @@ export function Admin() {
   const [lastTick, setLastTick] = useState<Date | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [takes, setTakes] = useState<AdminTake[]>([]);
-  const [accounts, setAccounts] = useState<{ name: string; user_id: string }[]>([]);
-  const [admins, setAdmins] = useState<string[]>([]);
 
   useEffect(() => { if (loaded) setLocal(settings); }, [loaded, settings]);
 
@@ -48,12 +46,10 @@ export function Admin() {
     if (!live) { setStatusErr('Aperçu : pas de connexion au serveur'); return; }
     const sb = (await getSupabase())!;
     const since = dayKey(new Date(Date.now() - 14 * 864e5));
-    const [lg, st, tk, pl, ad] = await Promise.all([
+    const [lg, st, tk] = await Promise.all([
       sb.from('bot_log').select('*').order('id', { ascending: false }).limit(30),
       sb.from('bot_state').select('last_tick').maybeSingle(),
       sb.from('takes').select('id, day, raw_text, rule, rule_label, probability, points_if_won, status, revealed, author:players(name)').eq('revealed', true).gte('day', since).order('day', { ascending: false }),
-      sb.from('players').select('name, user_id').not('user_id', 'is', null),
-      sb.from('app_admins').select('user_id'),
     ]);
     setLogs((lg.data ?? []) as LogRow[]);
     setLastTick(st.data?.last_tick ? new Date(st.data.last_tick) : null);
@@ -61,8 +57,6 @@ export function Admin() {
       id: t.id, day: t.day, author: (t.author as unknown as { name: string } | null)?.name ?? '?', text: t.raw_text, rule: t.rule, label: t.rule_label,
       probability: t.probability, points: t.points_if_won, status: t.status, revealed: t.revealed,
     })));
-    setAccounts((pl.data ?? []) as { name: string; user_id: string }[]);
-    setAdmins((ad.data ?? []).map((a) => a.user_id));
     callBot<{ slack: boolean; ai: boolean; secret: boolean; error?: string }>({ action: 'status' })
       .then((r) => { if (r.error) setStatusErr(r.error); else setStatus(r); })
       .catch(() => setStatusErr('Fonction serveur injoignable (déploiement Vercel en cours ?)'));
@@ -194,26 +188,7 @@ export function Admin() {
         )}
       </Panel>
 
-      <Panel title="Admins" aside={<span className="hint">{admins.length} admin{admins.length > 1 ? 's' : ''}</span>}>
-        <div className="stack">
-          <span className="hint">Seuls les admins voient le bouton Back-office et peuvent modifier ces réglages ; pour tous les autres, la page est fermée. Clique sur un pilote pour le nommer admin ou lui retirer ce rôle. Seuls les pilotes qui ont créé leur compte apparaissent.</span>
-          <div className="chips">
-            {[...accounts].sort((x, y) => Number(admins.includes(y.user_id)) - Number(admins.includes(x.user_id)) || x.name.localeCompare(y.name)).map((a) => {
-              const on = admins.includes(a.user_id);
-              const self = a.name === me;
-              const label = store.player(a.name).displayName ? `${store.player(a.name).displayName} (${a.name})` : a.name;
-              return (
-                <button key={a.name} type="button" className={`chip ${on ? 'chip-admin' : ''}`} aria-pressed={on} disabled={self}
-                  title={self ? 'Tu ne peux pas te retirer toi-même le rôle d\'admin' : on ? 'Retirer le rôle d\'admin' : 'Nommer admin'}
-                  onClick={async () => {
-                    const { error } = await (await getSupabase())!.rpc('admin_set_admin', { p_player: a.name, p_on: !on });
-                    if (error) setErr(error.message); else { setSaved(on ? `${label} n'est plus admin` : `${label} est admin`); loadAll(); }
-                  }}><span className="dot" style={{ background: store.player(a.name).color }} />{label}{on ? ' · admin' : ''}{self ? ' · toi' : ''}</button>
-              );
-            })}
-          </div>
-        </div>
-      </Panel>
+      <MembersPanel onError={setErr} onSaved={(m) => { setSaved(m); setTimeout(() => setSaved(null), 2000); }} />
     </div>
   );
 }
@@ -385,3 +360,100 @@ function TakesReview({ takes, onChange }: { takes: AdminTake[]; onChange: () => 
   );
 }
 
+
+type Member = { user_id: string; email: string | null; player: string | null; display_name: string | null; visitor: boolean; admin: boolean; banned: boolean; ban_reason: string | null; created_at: string; last_sign_in_at: string | null };
+
+const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '–');
+
+/** Membres inscrits : rôle admin, bannissement, déliaison du pilote. */
+function MembersPanel({ onError, onSaved }: { onError: (m: string) => void; onSaved: (m: string) => void }) {
+  const { live, session } = useAuth();
+  const [rows, setRows] = useState<Member[] | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [pending, setPending] = useState<{ id: string; action: 'ban' | 'unlink' } | null>(null);
+  const [reason, setReason] = useState('');
+
+  const load = useCallback(async () => {
+    if (!live) { setRows([]); return; }
+    const { data, error } = await (await getSupabase())!.rpc('admin_members');
+    if (error) { setMissing(/admin_members|function/i.test(error.message)); setRows([]); return; }
+    setRows((data ?? []) as Member[]);
+  }, [live]);
+  useEffect(() => { load(); }, [load]);
+
+  const run = async (fn: string, args: Record<string, unknown>, ok: string) => {
+    const { error } = await (await getSupabase())!.rpc(fn, args);
+    setPending(null); setReason('');
+    if (error) onError(error.message); else { onSaved(ok); load(); }
+  };
+
+  const label = (m: Member) => m.player ? (m.display_name ? `${m.display_name} (${m.player})` : m.player) : m.visitor ? 'Visiteur' : 'Sans profil';
+  const active = rows?.filter((m) => !m.banned).length ?? 0;
+  const banned = rows?.filter((m) => m.banned).length ?? 0;
+
+  return (
+    <Panel title="Membres" aside={rows ? <span className="hint">{active} actif{active > 1 ? 's' : ''}{banned ? ` · ${banned} banni${banned > 1 ? 's' : ''}` : ''}</span> : undefined}>
+      <div className="stack">
+        <span className="hint">Un membre banni ne voit plus rien de l'app et ne peut plus rien modifier ; ses courses restent dans les stats. « Délier » libère le pilote choisi à l'inscription (en cas d'erreur). Seuls les admins voient le back-office.</span>
+        {missing && <p className="form-msg" style={{ margin: 0 }}>Lance le script 007_bans.sql dans Supabase pour activer la gestion des membres.</p>}
+        {!live && <p className="hint" style={{ margin: 0 }}>Aperçu : la liste des membres n'est disponible que sur Pits Club.</p>}
+        {rows && rows.length > 0 && (
+          <div className="table-wrap">
+            <table className="table members">
+              <thead><tr><th>Membre</th><th>Profil</th><th className="hide-sm">Inscrit</th><th className="hide-sm">Vu</th><th>Admin</th><th>Accès</th></tr></thead>
+              <tbody>
+                {rows.map((m) => {
+                  const self = m.user_id === session?.user.id;
+                  const isPending = pending?.id === m.user_id;
+                  return (
+                    <tr key={m.user_id} className={m.banned ? 'is-banned' : ''}>
+                      <td><span className="member-mail">{m.email ?? '–'}</span>{self && <span className="hint"> · toi</span>}</td>
+                      <td>{m.player ? <PlayerTag name={m.player} size={22} /> : <span className="muted">{label(m)}</span>}</td>
+                      <td className="hide-sm num">{fmtDate(m.created_at)}</td>
+                      <td className="hide-sm num">{fmtDate(m.last_sign_in_at)}</td>
+                      <td>
+                        <label className="toggle mini" title={self ? 'Tu ne peux pas te retirer ce rôle' : ''}>
+                          <input type="checkbox" role="switch" checked={m.admin} disabled={self || m.banned}
+                            onChange={(e) => run('admin_set_role', { p_user: m.user_id, p_admin: e.target.checked }, e.target.checked ? `${label(m)} est admin` : `${label(m)} n'est plus admin`)} />
+                          <span className="toggle-track" aria-hidden="true"><i /></span>
+                          <span className="sr-only">Admin</span>
+                        </label>
+                      </td>
+                      <td>
+                        {isPending && pending.action === 'ban' ? (
+                          <div className="member-confirm">
+                            <input type="text" maxLength={120} placeholder="Motif (facultatif)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Motif du bannissement" />
+                            <button className="btn btn-sm btn-flag" onClick={() => run('admin_ban', { p_user: m.user_id, p_reason: reason }, `${m.email ?? 'Membre'} banni`)}>Confirmer</button>
+                            <button className="btn btn-sm" onClick={() => setPending(null)}>Annuler</button>
+                          </div>
+                        ) : isPending && pending.action === 'unlink' ? (
+                          <div className="member-confirm">
+                            <span className="hint">Libérer {m.player} ?</span>
+                            <button className="btn btn-sm btn-flag" onClick={() => run('admin_unlink', { p_user: m.user_id }, `${m.player} est de nouveau libre`)}>Confirmer</button>
+                            <button className="btn btn-sm" onClick={() => setPending(null)}>Annuler</button>
+                          </div>
+                        ) : m.banned ? (
+                          <div className="member-confirm">
+                            <span className="log-status failed">Banni</span>{m.ban_reason && <span className="hint">{m.ban_reason}</span>}
+                            <button className="btn btn-sm" onClick={() => run('admin_unban', { p_user: m.user_id }, `${m.email ?? 'Membre'} réactivé`)}>Réactiver</button>
+                          </div>
+                        ) : (
+                          <div className="member-confirm">
+                            <button className="btn btn-sm" disabled={self || m.admin} title={m.admin ? 'Retire d\'abord son rôle d\'admin' : ''} onClick={() => { setPending({ id: m.user_id, action: 'ban' }); setReason(''); }}>Bannir</button>
+                            {m.player && <button className="btn btn-sm" disabled={self} onClick={() => setPending({ id: m.user_id, action: 'unlink' })}>Délier</button>}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {rows === null && <p className="hint" style={{ margin: 0 }}>Chargement…</p>}
+        <span className="hint">Les inscriptions restent ouvertes : une personne bannie peut recréer un compte avec une autre adresse, qu'il suffira de bannir à son tour.</span>
+      </div>
+    </Panel>
+  );
+}

@@ -11,7 +11,7 @@ import { Admin } from './pages/Admin';
 import { useRoute } from './router';
 import { StoreProvider, useStore } from './store';
 import { AuthProvider, useAuth } from './auth';
-import { GateLoading, LoginScreen, Onboarding } from './pages/Gate';
+import { BannedScreen, GateLoading, LoginScreen, Onboarding } from './pages/Gate';
 import { Avatar, BrandMark } from './components/ui';
 import { dayKey, sessionState } from './lib/stats';
 
@@ -143,9 +143,10 @@ export default function App() {
 
 /** Rien n'est chargé ni affiché avant la connexion et le choix d'un profil (pilote ou visiteur). */
 function Gate() {
-  const { live, loading, session, me, visitor } = useAuth();
+  const { live, loading, session, me, visitor, banned } = useAuth();
   if (live && loading) return <GateLoading />;
   if (live && !session) return <LoginScreen />;
+  if (banned) return <BannedScreen />;
   if (!me && !visitor) return <Onboarding />;
   return <StoreProvider><Shell /></StoreProvider>;
 }

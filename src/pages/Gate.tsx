@@ -195,3 +195,17 @@ export function GateLoading() {
     </GateLayout>
   );
 }
+
+/** Compte banni par un admin : plus aucun accès aux données. */
+export function BannedScreen() {
+  const { signOut, session } = useAuth();
+  return (
+    <GateLayout>
+      <div className="gate-intro">
+        <h1>Accès retiré</h1>
+        <p className="muted">Ce compte{session?.user.email ? ` (${session.user.email})` : ''} n'a plus accès à Pits Club. Si c'est une erreur, contacte un admin du club.</p>
+      </div>
+      <p className="gate-foot"><button type="button" className="btn" onClick={signOut}>Se déconnecter</button></p>
+    </GateLayout>
+  );
+}

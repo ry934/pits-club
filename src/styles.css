@@ -712,3 +712,11 @@ tr.needs-review td { background: rgba(255, 216, 77, 0.06); }
 
 .chip.chip-admin { border-color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); opacity: 1; }
 .chip:disabled { cursor: default; }
+
+.toggle.mini { grid-template-columns: 46px; gap: 0; }
+.member-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.member-confirm input { width: 160px; min-height: 32px; padding: 4px 8px; }
+.member-mail { font-size: 0.88rem; }
+tr.is-banned td { opacity: 0.6; }
+tr.is-banned td:last-child { opacity: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

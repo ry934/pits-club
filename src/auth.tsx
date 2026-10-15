@@ -15,6 +15,7 @@ export type Auth = {
   nickname: string | null;    // pseudo choisi dans l'app (affiché à la place du nom)
   visitor: boolean;           // membre sans pilote (compte « visiteur »)
   admin: boolean;             // accès au back-office
+  banned: boolean;            // accès retiré par un admin
   refresh: () => void;
   signOut: () => Promise<void>;
   setDemoMe: (name: string | null) => void;
@@ -31,8 +32,8 @@ function writeDemo(v: string | null) { try { v ? localStorage.setItem(DEMO_KEY, 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const live = isLive();
   const demo = live ? null : readDemo();
-  const [state, setState] = useState<{ loading: boolean; session: Session | null; me: string | null; nickname: string | null; visitor: boolean; admin: boolean }>(
-    { loading: live, session: null, me: demo && demo !== DEMO_VISITOR ? demo : null, nickname: null, visitor: demo === DEMO_VISITOR, admin: !live },
+  const [state, setState] = useState<{ loading: boolean; session: Session | null; me: string | null; nickname: string | null; visitor: boolean; admin: boolean; banned: boolean }>(
+    { loading: live, session: null, me: demo && demo !== DEMO_VISITOR ? demo : null, nickname: null, visitor: demo === DEMO_VISITOR, admin: !live, banned: false },
   );
   const [tick, setTick] = useState(0);
 
@@ -43,16 +44,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       const sb = (await getSupabase())!;
       const load = async (session: Session | null) => {
-        let me: string | null = null, nickname: string | null = null, admin = false;
+        let me: string | null = null, nickname: string | null = null, admin = false, banned = false;
         if (session) {
-          const [{ data }, adm] = await Promise.all([
+          const [{ data }, adm, ban] = await Promise.all([
             sb.from('players').select('name, display_name').eq('user_id', session.user.id).maybeSingle(),
             sb.rpc('is_admin'),
+            sb.rpc('is_banned'),
           ]);
-          me = data?.name ?? null; nickname = data?.display_name ?? null; admin = adm.data === true;
+          me = data?.name ?? null; nickname = data?.display_name ?? null; admin = adm.data === true; banned = ban.data === true;
         }
         const visitor = !me && session?.user.user_metadata?.role === 'visitor';
-        if (alive) setState({ loading: false, session, me, nickname, visitor, admin });
+        if (alive) setState({ loading: false, session, me, nickname, visitor, admin, banned });
       };
       const { data } = await sb.auth.getSession();
       await load(data.session);
