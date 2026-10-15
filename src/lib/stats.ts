@@ -228,6 +228,16 @@ export function computeElo(races: Race[]): EloResult {
   return { rating: R, before, dayRating };
 }
 
+/** Cote d'un pilote à la fin d'une journée donnée (ou avant cette journée si strict), sinon cote actuelle. */
+export function ratingAt(elo: EloResult, name: string, day?: string, strict = false): number {
+  const h = elo.dayRating.get(name);
+  if (!h?.length) return SETTINGS.eloStart;
+  if (!day) return elo.rating.get(name) ?? h.at(-1)!.rating;
+  let v = SETTINGS.eloStart;
+  for (const x of h) { if (strict ? x.day < day : x.day <= day) v = x.rating; else break; }
+  return v;
+}
+
 /** Position attendue de chaque joueur d'une course, d'après les cotes avant la course. */
 export function expectedPositions(pre: number[]): number[] {
   return pre.map((ri, i) => 1 + pre.reduce((s, rj, j) => (j === i ? s : s + (1 - winProb(ri, rj))), 0));

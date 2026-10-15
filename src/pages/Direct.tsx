@@ -1,8 +1,8 @@
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { LapChart } from '../components/charts';
-import { Avatar, BrandMark, CountUp } from '../components/ui';
+import { Avatar, BrandMark, Cote, CountUp } from '../components/ui';
 import { liveFeed, liveTable, nextRaceOdds } from '../lib/live';
-import { dayKey, fmtAvg, fmtDay, fmtDuration, fmtTime, sessionState } from '../lib/stats';
+import { dayKey, fmtAvg, fmtDay, fmtDuration, fmtTime, ratingAt, sessionState } from '../lib/stats';
 import { SETTINGS } from '../lib/types';
 import { useStore } from '../store';
 
@@ -64,7 +64,7 @@ export function Direct() {
 
       <div className="live-grid">
         <section className="live-panel live-board" aria-label="Classement de la session">
-          <header className="live-h"><span>Classement de la session</span><span className="hint">moyenne · écart · 5 dernières</span></header>
+          <header className="live-h"><span>Classement de la session</span><span className="hint">5 dernières · moyenne · cote du jour · écart</span></header>
           <ol className="live-rows">
             {table.map((r) => (
               <li key={r.name} className={`live-row ${r.rank === 1 ? 'is-lead' : ''}`} style={{ '--c': player(r.name).color } as CSSProperties}>
@@ -79,6 +79,7 @@ export function Direct() {
                 </span>
                 <span className="live-last5">{r.last5.map((p, i) => <i key={i} className={`lp lp-${p}`}>{p}</i>)}</span>
                 <span className="live-avg num">{fmtAvg(r.avg)}</span>
+                <span className="live-cote"><Cote v={ratingAt(elo, r.name, day)} delta={ratingAt(elo, r.name, day) - ratingAt(elo, r.name, day, true)} /></span>
                 <span className="live-gap num">{r.rank === 1 ? 'Leader' : `+${fmtAvg(r.gap)}`}</span>
               </li>
             ))}

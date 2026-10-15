@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode, useEffect, useState } from 'react';
+import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react';
 import { href } from '../router';
 import { useStore } from '../store';
 import { fmtAvg } from '../lib/stats';
@@ -62,6 +62,17 @@ export function Delta({ delta, isNew }: { delta: number | null; isNew?: boolean 
 
 export const Avg = ({ v }: { v: number }) => <span className="num">{fmtAvg(v)}</span>;
 
+/** Cote Elo arrondie, avec l'évolution sur la période si fournie. */
+export function Cote({ v, delta }: { v: number; delta?: number }) {
+  const d = delta === undefined ? 0 : Math.round(delta);
+  return (
+    <span className="cote num" title="Cote Elo (départ à 1500)">
+      {Math.round(v)}
+      {delta !== undefined && d !== 0 && <small className={d > 0 ? 'good' : 'bad'}>{d > 0 ? '+' : '−'}{Math.abs(d)}</small>}
+    </span>
+  );
+}
+
 export function Stat({ label, value, sub, tone, xl }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string; xl?: boolean }) {
   return (
     <div className="stat">
@@ -113,18 +124,20 @@ const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia?.(
 /** Compteur animé (une seule fois à l'affichage), désactivé si mouvement réduit. */
 export function CountUp({ value, decimals = 0, duration = 700 }: { value: number; decimals?: number; duration?: number }) {
   const [v, setV] = useState(reduceMotion() ? value : 0);
+  const shown = useRef(v);   // repart de la valeur affichée : 13 → 14 ne redescend pas à 0 en direct
   useEffect(() => {
-    if (reduceMotion()) { setV(value); return; }
-    let raf = 0; const t0 = performance.now();
+    if (reduceMotion()) { setV(value); shown.current = value; return; }
+    let raf = 0; const t0 = performance.now(); const from = shown.current;
     const tick = (t: number) => {
-      const k = Math.min(1, (t - t0) / duration);
-      setV(value * (1 - Math.pow(1 - k, 3)));
+      const k = Math.min(1, Math.max(0, (t - t0) / duration));
+      const x = from + (value - from) * (1 - Math.pow(1 - k, 3));
+      shown.current = x; setV(x);
       if (k < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [value, duration]);
-  return <span className="num">{v.toFixed(decimals).replace('.', ',')}</span>;
+  return <span className="num">{v.toFixed(decimals).replace('.', ',').replace(/^-(0[,0]*)$/, '$1')}</span>;
 }
 
 export function Crown() {

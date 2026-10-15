@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { LapChart } from '../components/charts';
-import { Avatar, Avg, CountUp, Empty, Panel, PlacesBar, PlayerTag, Pos, Section, Stat } from '../components/ui';
+import { Avatar, Avg, Cote, CountUp, Empty, Panel, PlacesBar, PlayerTag, Pos, Section, Stat } from '../components/ui';
 import { Emblem } from '../components/Emblem';
 import { BADGE } from '../lib/badges';
 import { href } from '../router';
 import { useStore } from '../store';
-import { fmtDay, fmtDuration, fmtTime, sessionState, sessionSummary } from '../lib/stats';
+import { fmtDay, fmtDuration, fmtTime, ratingAt, sessionState, sessionSummary } from '../lib/stats';
 import { CloseSessionButton } from './Profil';
 
 export function Session({ day: dayParam }: { day?: string }) {
@@ -64,7 +64,7 @@ export function Session({ day: dayParam }: { day?: string }) {
       <Section title="Classement du jour">
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>#</th><th>Pilote</th><th className="r">Moy.</th><th className="r">Courses</th><th>Places</th><th className="r" title="Places gagnées par rapport à la position attendue selon la cote">Vs cote</th></tr></thead>
+            <thead><tr><th>#</th><th>Pilote</th><th className="r">Moy.</th><th className="r" title="Cote Elo en fin de session, et ce qu'elle a gagné ou perdu dans la journée">Cote</th><th className="r">Courses</th><th>Places</th><th className="r" title="Places gagnées par rapport à la position attendue selon la cote">Vs cote</th></tr></thead>
             <tbody>
               {s.table.map((r) => {
                 const g = s.surperf.find((x) => x.name === r.name)!.gain;
@@ -73,6 +73,7 @@ export function Session({ day: dayParam }: { day?: string }) {
                     <td className="rank">{r.rank}</td>
                     <td><PlayerTag name={r.name} /></td>
                     <td className="r"><Avg v={r.avg} /></td>
+                    <td className="r"><Cote v={ratingAt(elo, r.name, day)} delta={ratingAt(elo, r.name, day) - ratingAt(elo, r.name, day, true)} /></td>
                     <td className="r num">{r.races}</td>
                     <td style={{ minWidth: 110 }}><PlacesBar places={r.places} total={r.races} /><span className="sub-num num">{r.places.join(' · ')}</span></td>
                     <td className={`r num ${g > 0.5 ? 'good' : g < -0.5 ? 'bad' : ''}`}>{g > 0 ? '+' : ''}{g.toFixed(1).replace('.', ',')}</td>

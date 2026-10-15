@@ -1,10 +1,10 @@
 import { CSSProperties, useMemo, useState } from 'react';
 import { TrendChart } from '../components/charts';
-import { Avg, Avatar, Delta, Empty, Panel, PlacesBar, PlayerTag, Section, Stat } from '../components/ui';
+import { Avg, Avatar, Cote, Delta, Empty, Panel, PlacesBar, PlayerTag, Section, Stat } from '../components/ui';
 import { useStore } from '../store';
 import {
   dayKey, fmtAvg, fmtDay, fmtDuration, fmtMonth, fmtShort, monthKey, parseLocal, Period, PERIOD_LABELS, PeriodKind,
-  periodOf, previousPeriod, nextPeriod, rankedWithEvolution, records, Run, standings,
+  periodOf, previousPeriod, nextPeriod, rankedWithEvolution, ratingAt, records, Run, standings,
 } from '../lib/stats';
 import { Race } from '../lib/types';
 import { href } from '../router';
@@ -54,7 +54,7 @@ function lastN(races: Race[], name: string, n: number) {
 }
 
 function Classement() {
-  const { races, dayList, player, lastSeen } = useStore();
+  const { races, dayList, player, lastSeen, elo } = useStore();
   const sizes = useSessionSizes();
   const [kind, setKindRaw] = useState<PeriodKind | 'custom'>(() => readPref('mk.period', 'month'));
   const [period, setPeriod] = useState<Period>(() => periodOf(kind === 'custom' ? 'month' : kind, dayList.at(-1)!));
@@ -72,6 +72,8 @@ function Classement() {
   const next = kind === 'custom' ? null : nextPeriod(period, dayList);
   const filter = (p: Period | null) => p ? races.filter((r) => r.day >= p.start && r.day < p.end && sizeOk(sizes.get(r.day)!, size) && (!withP || r.p.includes(withP))) : [];
   const cur = filter(eff);
+  const endDay = cur.at(-1)?.day;
+  const startDay = eff.kind === 'all' && kind !== 'custom' ? undefined : eff.start;
   const rows = useMemo(() => rankedWithEvolution(standings(cur), prev ? standings(filter(prev)) : null), [cur.length, eff.key, prev?.key, size, withP]);
   const shown = rows.filter((r) => (!activeOnly || player(r.name).active) && r.name !== 'Other');
   const allNames = [...lastSeen.keys()].filter((n) => n !== 'Other');
@@ -122,7 +124,7 @@ function Classement() {
           <table className="table">
             <thead>
               <tr>
-                <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th><th className="r">Courses</th>
+                <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th><th className="r" title="Cote Elo en fin de période, et son évolution sur la période">Cote</th><th className="r">Courses</th>
                 <th className="r">Vict.</th><th className="r hide-sm">Podium</th>
                 <th className="r hide-sm" title="Moyenne sur les 5, 10 et 20 dernières courses de la sélection">5 · 10 · 20 dern.</th><th className="hide-sm">Places</th>
               </tr>
@@ -134,6 +136,7 @@ function Classement() {
                   <td className="hide-sm"><Delta delta={r.delta} isNew={r.isNew} /></td>
                   <td><PlayerTag name={r.name} sub={player(r.name).active ? undefined : 'ancien'} /></td>
                   <td className="r"><b><Avg v={r.avg} /></b></td>
+                  <td className="r"><Cote v={ratingAt(elo, r.name, endDay)} delta={startDay ? ratingAt(elo, r.name, endDay) - ratingAt(elo, r.name, startDay, true) : undefined} /></td>
                   <td className="r num">{r.races}</td>
                   <td className="r num good">{Math.round((r.wins / r.races) * 100)} %</td>
                   <td className="r num hide-sm">{Math.round(((r.places[0] + r.places[1] + r.places[2]) / r.races) * 100)} %</td>
@@ -150,7 +153,7 @@ function Classement() {
           </table>
         </div>
       )}
-      <p className="hint">Classement sur les positions relatives du groupe (1 à 4), pas sur le rang affiché par le jeu. Tri : moyenne, puis victoires, puis courses.{prev ? ` ▲▼ par rapport à ${prev.label}.` : ''}</p>
+      <p className="hint">Classement sur les positions relatives du groupe (1 à 4), pas sur le rang affiché par le jeu. Tri : moyenne, puis victoires, puis courses. Cote : niveau Elo en fin de période (départ à 1500), avec son évolution sur la période.{prev ? ` ▲▼ par rapport à ${prev.label}.` : ''}</p>
     </>
   );
 }
