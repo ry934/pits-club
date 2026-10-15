@@ -7,6 +7,7 @@ import { dailyChallenge, horoscope, nextDeadline, rivalryOfTheDay } from '../lib
 import { dayKey, fmtAvg, fmtDay, fmtMonth, fmtShort, fmtTime, monthKey, sessionSummary, standings } from '../lib/stats';
 import { href } from '../router';
 import { useStore } from '../store';
+import { Heatmap } from '../components/Heatmap';
 import { useAuth } from '../auth';
 import { MyPaddock } from './MyPaddock';
 
@@ -75,6 +76,8 @@ export function Paddock() {
           </section>
         </div>
       )}
+
+      <Heatmap me={me} />
 
       <div className="grid grid-paddock">
         <div className="stack">

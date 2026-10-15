@@ -836,3 +836,35 @@ tr.is-banned td:last-child { opacity: 1; }
 
 .gate-tip { margin: 0; padding: 10px 12px; border-left: 3px solid var(--yellow); background: rgba(255, 216, 77, 0.07); border-radius: 0 4px 4px 0; font-size: 0.84rem; line-height: 1.45; color: var(--silver); }
 .gate-tip b { color: var(--yellow); font-family: var(--font-display); letter-spacing: 0.04em; }
+
+/* ------------------------------------------------------------ activité (heatmap) */
+.heat-panel { --hc: 14px; }
+.heat-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.heat-controls select { width: auto; min-height: 30px; padding: 2px 8px; font-size: 0.82rem; }
+.heat { position: relative; display: flex; flex-direction: column; gap: 10px; }
+.heat-scroll { overflow-x: auto; padding: 4px 2px 6px; scrollbar-width: thin; }
+.heat-grid { display: grid; gap: 4px; grid-auto-rows: var(--hc); width: max-content; margin: 0 auto; }
+.heat-month { font: 600 0.66rem/1 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel); white-space: nowrap; align-self: end; }
+.heat-day { font: 600 0.64rem/var(--hc) var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel); }
+.heat-cell { width: var(--hc); height: var(--hc); border-radius: 3px; display: block; transition: transform 0.12s, box-shadow 0.12s; outline: none; }
+.heat-cell.void { visibility: hidden; }
+.heat-cell.l0, .heat-legend .l0 { background: rgba(146, 155, 184, 0.08); box-shadow: inset 0 0 0 1px rgba(146, 155, 184, 0.1); }
+.heat-cell.lf { background: transparent; box-shadow: inset 0 0 0 1px rgba(146, 155, 184, 0.08); }
+.heat-cell.l1, .heat-legend .l1 { background: rgba(40, 231, 255, 0.22); }
+.heat-cell.l2, .heat-legend .l2 { background: rgba(40, 231, 255, 0.45); }
+.heat-cell.l3, .heat-legend .l3 { background: rgba(40, 231, 255, 0.72); }
+.heat-cell.l4, .heat-legend .l4 { background: var(--cyan); box-shadow: 0 0 8px rgba(40, 231, 255, 0.6); }
+.heat-cell:hover, .heat-cell:focus-visible { transform: scale(1.35); box-shadow: 0 0 0 2px var(--white), 0 0 12px rgba(40, 231, 255, 0.7); z-index: 1; position: relative; }
+.heat-cell.today { box-shadow: 0 0 0 2px var(--yellow); }
+.heat-tip { position: absolute; transform: translate(-50%, calc(-100% - 10px)); pointer-events: none; z-index: 5; display: flex; flex-direction: column; gap: 2px; padding: 8px 11px; border-radius: 4px;
+  background: rgba(16, 19, 33, 0.96); border: 1px solid rgba(40, 231, 255, 0.5); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 14px rgba(40, 231, 255, 0.2); white-space: nowrap; font-size: 0.8rem; }
+.heat-tip::after { content: ''; position: absolute; left: calc(50% + var(--arrow, 0px)); bottom: -6px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg); background: rgba(16, 19, 33, 0.96); border-right: 1px solid rgba(40, 231, 255, 0.5); border-bottom: 1px solid rgba(40, 231, 255, 0.5); }
+.heat-tip b { font: 800 0.95rem/1.1 var(--font-display); color: var(--cyan); }
+.heat-tip span { color: var(--silver); }
+.heat-tip-info { color: var(--steel) !important; font-size: 0.74rem; }
+.heat-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px 20px; flex-wrap: wrap; font-size: 0.84rem; color: var(--steel); }
+.heat-sum b { color: var(--white); }
+.heat-legend { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; }
+.heat-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+@media (min-width: 1400px) { .heat-panel { --hc: 16px; } }
+@media (max-width: 640px) { .heat-panel { --hc: 12px; } .heat-grid { gap: 3px; } }
