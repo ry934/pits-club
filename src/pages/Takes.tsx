@@ -6,6 +6,8 @@ import { dayKey, fmtDay, sessionState } from '../lib/stats';
 import { estimateProbability, pointsFor, resolveTake, RULE_KINDS, ruleLabel, TakeOutcome, TakeRule } from '../lib/takes';
 import { mockTakeHistory, takeLeaderboard } from '../mock/takes';
 import { useStore } from '../store';
+import { isLive } from '../lib/data';
+import { TakesLive } from './TakesLive';
 
 type Mode = 'open' | 'locked' | 'revealed';
 type MyTake = { author: string; rule: TakeRule; text: string; submitted: boolean };
@@ -33,6 +35,11 @@ function makeRule(kind: TakeRule['kind'], p1: string, p2: string, x: number): Ta
 }
 
 export function Takes() {
+  return isLive() ? <TakesLive /> : <TakesDemo />;
+}
+
+/** Version de démonstration (aperçu sans base) : Takes simulés. */
+function TakesDemo() {
   const { byDay, dayList, elo, activeNames, closedDays } = useStore();
   const lastDay = dayList.at(-1)!;
   const lastRaces = byDay.get(lastDay)!;

@@ -7,6 +7,7 @@ import { Trophees } from './pages/Trophees';
 import { Pilote } from './pages/Pilote';
 import { Profil } from './pages/Profil';
 import { Direct } from './pages/Direct';
+import { Admin } from './pages/Admin';
 import { useRoute } from './router';
 import { StoreProvider, useStore } from './store';
 import { AuthProvider, useAuth } from './auth';
@@ -23,7 +24,7 @@ const NAV = [
 ];
 const TITLES: Record<string, string> = {
   paddock: 'Paddock', session: 'Session', stats: 'Statistiques', rivalites: 'Rivalités', takes: 'Takes',
-  trophees: 'Trophées', pilote: 'Pilote', profil: 'Profil',
+  trophees: 'Trophées', pilote: 'Pilote', profil: 'Profil', admin: 'Back-office',
 };
 const ALIASES: Record<string, string> = { grille: 'session', duel: 'rivalites', classement: 'stats', records: 'stats', pilotes: 'trophees' };
 
@@ -38,6 +39,11 @@ function SessionChip() {
       {live ? 'En course' : <>Terminée<span className="long">&nbsp;· {byDay.get(today)!.length} courses</span></>}
     </a>
   );
+}
+
+function AdminLink() {
+  const { admin } = useAuth();
+  return admin ? <a className="btn btn-sm" href="#/admin">Back-office</a> : null;
 }
 
 function MeButton({ compact }: { compact?: boolean }) {
@@ -62,7 +68,7 @@ function Shell() {
   if (page === 'direct' && races.length > 0) return <Direct />;
   const section = page === 'session' ? 'paddock' : page === 'pilote' ? 'trophees' : page;
   let body;
-  if (races.length === 0 && page !== 'profil') body = <Waiting />;
+  if (races.length === 0 && page !== 'profil' && page !== 'admin') body = <Waiting />;
   else switch (page) {
     case 'session': body = <Session day={a} />; break;
     case 'stats': body = <Stats tab={raw === 'records' ? 'records' : a} />; break;
@@ -71,6 +77,7 @@ function Shell() {
     case 'trophees': body = <Trophees tab={raw === 'pilotes' ? 'pilotes' : a} />; break;
     case 'pilote': body = <Pilote name={a} key={a} />; break;
     case 'profil': body = <Profil />; break;
+    case 'admin': body = <Admin />; break;
     default: body = <Paddock />;
   }
   const navLinks = (cls: string) => NAV.map((n) => (
@@ -90,6 +97,7 @@ function Shell() {
         <nav className="nav" aria-label="Sections">{navLinks('')}</nav>
         <div className="sidebar-foot">
           <a className="btn btn-sm live-link" href="#/direct">Mode direct</a>
+          <AdminLink />
           <MeButton />
         </div>
       </aside>

@@ -14,6 +14,7 @@ export type Auth = {
   me: string | null;          // nom du pilote tel que dans le formulaire
   nickname: string | null;    // pseudo choisi dans l'app (affiché à la place du nom)
   visitor: boolean;           // membre sans pilote (compte « visiteur »)
+  admin: boolean;             // accès au back-office
   refresh: () => void;
   signOut: () => Promise<void>;
   setDemoMe: (name: string | null) => void;
@@ -30,8 +31,8 @@ function writeDemo(v: string | null) { try { v ? localStorage.setItem(DEMO_KEY, 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const live = isLive();
   const demo = live ? null : readDemo();
-  const [state, setState] = useState<{ loading: boolean; session: Session | null; me: string | null; nickname: string | null; visitor: boolean }>(
-    { loading: live, session: null, me: demo && demo !== DEMO_VISITOR ? demo : null, nickname: null, visitor: demo === DEMO_VISITOR },
+  const [state, setState] = useState<{ loading: boolean; session: Session | null; me: string | null; nickname: string | null; visitor: boolean; admin: boolean }>(
+    { loading: live, session: null, me: demo && demo !== DEMO_VISITOR ? demo : null, nickname: null, visitor: demo === DEMO_VISITOR, admin: !live },
   );
   const [tick, setTick] = useState(0);
 
@@ -42,13 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       const sb = (await getSupabase())!;
       const load = async (session: Session | null) => {
-        let me: string | null = null, nickname: string | null = null;
+        let me: string | null = null, nickname: string | null = null, admin = false;
         if (session) {
-          const { data } = await sb.from('players').select('name, display_name').eq('user_id', session.user.id).maybeSingle();
-          me = data?.name ?? null; nickname = data?.display_name ?? null;
+          const [{ data }, adm] = await Promise.all([
+            sb.from('players').select('name, display_name').eq('user_id', session.user.id).maybeSingle(),
+            sb.rpc('is_admin'),
+          ]);
+          me = data?.name ?? null; nickname = data?.display_name ?? null; admin = adm.data === true;
         }
         const visitor = !me && session?.user.user_metadata?.role === 'visitor';
-        if (alive) setState({ loading: false, session, me, nickname, visitor });
+        if (alive) setState({ loading: false, session, me, nickname, visitor, admin });
       };
       const { data } = await sb.auth.getSession();
       await load(data.session);

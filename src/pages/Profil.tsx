@@ -57,7 +57,7 @@ function VisitorProfile() {
 // ------------------------------------------------------------ profil
 
 function MyProfile() {
-  const { me, nickname, session, signOut, refresh, live } = useAuth();
+  const { me, nickname, session, signOut, refresh, live, admin } = useAuth();
   const { reload } = useStore();
   const [value, setValue] = useState(nickname ?? '');
   const [msg, setMsg] = useState<string | null>(null);
@@ -76,6 +76,7 @@ function MyProfile() {
           <div className="btn-row">
             <a className="btn btn-primary" href="#/">Mon paddock</a>
             <a className="btn" href={href('pilote', me!)}>Ma fiche</a>
+            {admin && <a className="btn" href="#/admin">Back-office</a>}
             <button className="btn" onClick={signOut}>{live ? 'Se déconnecter' : 'Changer de pilote'}</button>
           </div>
         </div>

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "build:preview": "vite build --mode preview",
     "seed": "python3 -I scripts/make_seed.py",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:api": "esbuild server/bot.ts --bundle --platform=node --format=esm --target=node18 --outfile=api/bot.js --banner:js='// Fichier généré par « npm run build:api » à partir de server/bot.ts : ne pas modifier à la main.'"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.45.4",
