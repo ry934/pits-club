@@ -92,7 +92,7 @@ function Shell() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <BrandMark />
-          <span className="brand-text"><span className="brand-name">Pits Club</span><span className="brand-sub">Neon Grand Prix</span></span>
+          <span className="brand-text"><span className="brand-name">Pits Club</span><span className="brand-sub">MK expert mode</span></span>
         </a>
         <nav className="nav" aria-label="Sections">{navLinks('')}</nav>
         <div className="sidebar-foot">

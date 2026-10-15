@@ -13,7 +13,7 @@ function GateLayout({ children, wide }: { children: ReactNode; wide?: boolean })
       <div className={`gate-inner ${wide ? 'wide' : ''}`}>
         <header className="gate-brand">
           <BrandMark />
-          <span className="brand-text"><span className="brand-name">Pits Club</span><span className="brand-sub">Neon Grand Prix</span></span>
+          <span className="brand-text"><span className="brand-name">Pits Club</span><span className="brand-sub">MK expert mode</span></span>
         </header>
         {children}
       </div>
