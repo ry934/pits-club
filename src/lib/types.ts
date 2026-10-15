@@ -12,7 +12,7 @@ export type Race = {
 export type FlaggedRace = RawRace & { reason: 'duplicate-name' };
 export type ReplacedRace = { replaced: RawRace; by: RawRace };
 
-export type Player = { name: string; color: string; active: boolean; displayName?: string; id?: string; avatarPath?: string; avatarUrl?: string };
+export type Player = { name: string; color: string; active: boolean; hidden?: boolean; displayName?: string; id?: string; avatarPath?: string; avatarUrl?: string };
 
 export type Dataset = {
   players: Player[];

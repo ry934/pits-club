@@ -434,7 +434,7 @@ function Board({ title, rows, hud }: { title: string; hud?: 'yellow' | 'red'; ro
 }
 
 function Records() {
-  const { races, runs, days, flagged, replaced } = useStore();
+  const { races, runs, days, flagged, replaced, player } = useStore();
   const rec = useMemo(() => records(races, runs, days), [races, runs, days]);
   return (
     <>
@@ -462,8 +462,8 @@ function Records() {
                 {[...flagged].reverse().map((f) => (
                   <tr key={f.ts}>
                     <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtShort(f.ts.slice(0, 10))} {f.ts.slice(11, 16).replace(':', 'h')}</td>
-                    <td>{f.p.join(' · ')}</td>
-                    <td className="bad">{f.p.find((n, i) => f.p.indexOf(n) !== i)} saisi deux fois</td>
+                    <td>{f.p.map((n) => player(n).displayName ?? n).join(' · ')}</td>
+                    <td className="bad">{(() => { const d = f.p.find((n, i) => f.p.indexOf(n) !== i)!; return d === 'Other' ? 'Nom saisi deux fois' : `${player(d).displayName ?? d} saisi deux fois`; })()}</td>
                   </tr>
                 ))}
               </tbody>

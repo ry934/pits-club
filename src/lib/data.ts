@@ -22,15 +22,14 @@ async function fromSupabase(): Promise<Dataset> {
     for (const r of data) raw.push({ ts: String(r.ts).replace(' ', 'T').slice(0, 19), p: [r.p1, r.p2, r.p3, r.p4], src: r.source });
     if (data.length < 1000) break;
   }
-  // avatar_path peut ne pas exister encore (script photos pas lancé) : on retombe sur la liste sans photo.
-  let pl = await sb.from('players').select('id,name,color,active,display_name,avatar_path').order('created_at');
-  if (pl.error) pl = await sb.from('players').select('id,name,color,active,display_name').order('created_at') as typeof pl;
+  // « * » : les colonnes ajoutées plus tard (avatar_path, hidden) sont lues si elles existent.
+  const pl = await sb.from('players').select('*').order('created_at');
   const { data: closures, error: e2 } = await sb.from('session_closures').select('day');
   if (pl.error) throw pl.error;
   if (e2) throw e2;
   const players: Player[] = (pl.data ?? []).map((p) => ({
     id: p.id, name: p.name, color: p.color, active: p.active,
-    displayName: p.display_name ?? undefined, avatarPath: (p as { avatar_path?: string }).avatar_path ?? undefined,
+    displayName: p.display_name ?? undefined, avatarPath: p.avatar_path ?? undefined, hidden: p.hidden === true,
   }));
   await attachAvatarUrls(players);
   return {

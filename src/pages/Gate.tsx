@@ -104,10 +104,10 @@ export function Onboarding() {
     (async () => {
       let list: Free[];
       if (live) {
-        const { data } = await (await getSupabase())!.from('players').select('name, color, active').is('user_id', null).neq('name', 'Other');
-        list = (data ?? []) as Free[];
+        const { data } = await (await getSupabase())!.from('players').select('*').is('user_id', null).neq('name', 'Other');
+        list = ((data ?? []) as (Free & { hidden?: boolean })[]).filter((p) => !p.hidden);
       } else {
-        list = (seed.players as Free[]).filter((p) => p.name !== 'Other');
+        list = (seed.players as (Free & { hidden?: boolean })[]).filter((p) => p.name !== 'Other' && !p.hidden);
       }
       list.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
       setFree(list);

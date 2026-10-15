@@ -78,21 +78,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const base = useMemo<Omit<Store, 'sync'> | null>(() => {
     if (!ds) return null;
-    const byDay = groupByDay(ds.races);
-    const known = new Map(ds.players.map((p) => [p.name, p]));
-    const fallback = (name: string): Player => ({ name, color: '#9AA3B5', active: true });
-    const lastSeen = lastSeenMap(ds.races);
+    // Pilotes effacés : ils disparaissent de l'app (remplacés par « Ancien joueur »), mais leurs courses restent
+    // pour que les stats et les cotes des autres ne bougent pas. La cote est calculée sur les courses d'origine.
+    const hidden = new Set(ds.players.filter((p) => p.hidden).map((p) => p.name));
+    const mask = <T extends { p: string[] }>(r: T): T => (r.p.some((n) => hidden.has(n)) ? { ...r, p: r.p.map((n) => (hidden.has(n) ? 'Other' : n)) } : r);
+    const races = hidden.size ? ds.races.map(mask) : ds.races;
+    const flagged = hidden.size ? ds.flagged.map(mask) : ds.flagged;
+    const replaced = hidden.size ? ds.replaced.map((x) => ({ replaced: mask(x.replaced), by: mask(x.by) })) : ds.replaced;
+    const players = ds.players.filter((p) => !p.hidden).map((p) => (p.name === 'Other' ? { ...p, displayName: 'Ancien joueur' } : p));
+    const byDay = groupByDay(races);
+    const known = new Map(players.map((p) => [p.name, p]));
+    const fallback = (name: string): Player => (name === 'Other' ? { name, color: '#6B7390', active: false, displayName: 'Ancien joueur' } : { name, color: '#9AA3B5', active: true });
+    const lastSeen = lastSeenMap(races);
     const elo = computeElo(ds.races);
     return {
       ...ds,
+      races, flagged, replaced, players,
       elo,
-      badges: computeBadges(ds.races, elo),
-      runs: allRuns(ds.races),
-      days: playerDays(ds.races),
+      badges: computeBadges(races, elo),
+      runs: allRuns(races),
+      days: playerDays(races),
       byDay, dayList: [...byDay.keys()],
       lastSeen,
       player: (name) => known.get(name) ?? fallback(name),
-      activeNames: ds.players.filter((p) => p.active && lastSeen.has(p.name)).map((p) => p.name),
+      activeNames: players.filter((p) => p.active && p.name !== 'Other' && lastSeen.has(p.name)).map((p) => p.name),
       reload: () => setTick((t) => t + 1),
     };
   }, [ds]);

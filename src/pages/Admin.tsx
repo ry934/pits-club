@@ -188,6 +188,8 @@ export function Admin() {
         )}
       </Panel>
 
+      <HiddenPanel onError={setErr} onSaved={(m) => { setSaved(m); setTimeout(() => setSaved(null), 2000); }} />
+
       <MembersPanel onError={setErr} onSaved={(m) => { setSaved(m); setTimeout(() => setSaved(null), 2000); }} />
     </div>
   );
@@ -453,6 +455,49 @@ function MembersPanel({ onError, onSaved }: { onError: (m: string) => void; onSa
         )}
         {rows === null && <p className="hint" style={{ margin: 0 }}>Chargement…</p>}
         <span className="hint">Les inscriptions restent ouvertes : une personne bannie peut recréer un compte avec une autre adresse, qu'il suffira de bannir à son tour.</span>
+      </div>
+    </Panel>
+  );
+}
+
+/** Pilotes effacés de l'app : ils n'apparaissent plus nulle part, leurs courses restent pour les stats des autres. */
+function HiddenPanel({ onError, onSaved }: { onError: (m: string) => void; onSaved: (m: string) => void }) {
+  const { live } = useAuth();
+  const { activeNames, lastSeen, reload } = useStore();
+  const [hidden, setHidden] = useState<string[] | null>(null);
+  const [pick, setPick] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const load = useCallback(async () => {
+    if (!live) { setHidden(['Auguste', 'Baptiste', 'Eva', 'Genevieve']); return; }
+    const { data } = await (await getSupabase())!.from('players').select('*').order('name');
+    setHidden(((data ?? []) as { name: string; hidden?: boolean }[]).filter((p) => p.hidden).map((p) => p.name));
+  }, [live]);
+  useEffect(() => { load(); }, [load]);
+  const set = async (name: string, on: boolean) => {
+    if (!live) return;
+    const { error } = await (await getSupabase())!.rpc('admin_set_hidden', { p_player: name, p_hidden: on });
+    setConfirm(false); setPick('');
+    if (error) onError(/admin_set_hidden|function/i.test(error.message) ? 'Lance le script 008_hidden_players.sql dans Supabase.' : error.message);
+    else { onSaved(on ? `${name} effacé de l'app` : `${name} restauré`); load(); reload(); }
+  };
+  const candidates = [...lastSeen.keys()].filter((n) => n !== 'Other' && !(hidden ?? []).includes(n)).sort((a, b) => Number(activeNames.includes(a)) - Number(activeNames.includes(b)) || a.localeCompare(b));
+  return (
+    <Panel title="Pilotes effacés" aside={hidden ? <span className="hint">{hidden.length}</span> : undefined}>
+      <div className="stack">
+        <span className="hint">Un pilote effacé disparaît de toute l'app : classements, fiches, face-à-face, trophées, records, choix à l'inscription. Dans l'historique des sessions, sa place apparaît comme « Ancien joueur ». Ses courses restent dans les calculs, pour que les stats et les cotes des autres ne changent pas.</span>
+        <div className="chips">
+          {(hidden ?? []).map((n) => (
+            <span key={n} className="chip" style={{ cursor: 'default' }}>{n}<button type="button" className="linkbtn" onClick={() => set(n, false)}>Restaurer</button></span>
+          ))}
+          {hidden?.length === 0 && <span className="hint">Aucun pilote effacé.</span>}
+        </div>
+        <div className="btn-row">
+          <select aria-label="Pilote à effacer" value={pick} onChange={(e) => { setPick(e.target.value); setConfirm(false); }}>
+            <option value="">Effacer un pilote…</option>
+            {candidates.map((n) => <option key={n} value={n}>{n}{activeNames.includes(n) ? ' (actif)' : ''}</option>)}
+          </select>
+          {pick && <button className={`btn btn-sm ${confirm ? 'btn-flag' : ''}`} onClick={() => (confirm ? set(pick, true) : setConfirm(true))}>{confirm ? `Confirmer : effacer ${pick}` : 'Effacer'}</button>}
+        </div>
       </div>
     </Panel>
   );
