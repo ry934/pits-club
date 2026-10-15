@@ -1,10 +1,12 @@
 import { CSSProperties, useMemo, useState } from 'react';
-import { TrendChart } from '../components/charts';
-import { Avg, Avatar, Cote, Delta, Empty, Panel, PlacesBar, PlayerTag, Section, Stat } from '../components/ui';
+import { AvgBars, TrendChart } from '../components/charts';
+import { Avg, Avatar, Cote, Delta, Empty, Panel, PlacesBar, PlayerTag, Pos, Section, Stat } from '../components/ui';
+import { useAuth } from '../auth';
+import { H2HRow, playerSheet, PlayerSheet, Trend, TREND_BEFORE, TREND_RECENT, trendOf } from '../lib/sheet';
 import { useStore } from '../store';
 import {
   dayKey, fmtAvg, fmtDay, fmtDuration, fmtMonth, fmtShort, monthKey, parseLocal, Period, PERIOD_LABELS, PeriodKind,
-  periodOf, previousPeriod, nextPeriod, rankedWithEvolution, ratingAt, records, Run, standings,
+  periodOf, previousPeriod, nextPeriod, rankedWithEvolution, ratingAt, records, Run, standings, fmtTime, WEEKDAYS,
 } from '../lib/stats';
 import { Race } from '../lib/types';
 import { href } from '../router';
@@ -14,16 +16,18 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'classement', label: 'Championship' }, { key: 'tendances', label: 'Tendances' },
   { key: 'records', label: 'Records' }, { key: 'sessions', label: 'Sessions' },
 ];
-const SIZES = [{ k: 'all', l: 'Toutes' }, { k: '4', l: '4 pilotes' }, { k: '5', l: '5' }, { k: '6', l: '6' }, { k: '7', l: '7 et +' }];
 
-function readPref<T>(k: string, d: T): T { try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } }
-function writePref(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* indisponible */ } }
+const SIZES = [{ k: 'all', l: 'Toutes' }, { k: '4', l: '4 pilotes' }, { k: '5', l: '5' }, { k: '6', l: '6' }, { k: '7', l: '7 et +' }];
 
 function useSessionSizes() {
   const { byDay } = useStore();
   return useMemo(() => new Map([...byDay].map(([d, rs]) => [d, new Set(rs.flatMap((r) => r.p)).size])), [byDay]);
 }
 const sizeOk = (size: number, f: string) => f === 'all' || (f === '7' ? size >= 7 : size === Number(f));
+
+function readPref<T>(k: string, d: T): T { try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } }
+function writePref(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* indisponible */ } }
+
 
 export function Stats({ tab: tabParam }: { tab?: string }) {
   const tab = (TABS.find((t) => t.key === tabParam)?.key ?? 'classement') as Tab;
@@ -48,21 +52,25 @@ export function Stats({ tab: tabParam }: { tab?: string }) {
 
 // ------------------------------------------------------------ Championship
 
-function lastN(races: Race[], name: string, n: number) {
-  const mine = races.filter((r) => r.p.includes(name)).slice(-n);
-  return mine.length >= Math.min(n, 3) ? mine.reduce((s, r) => s + r.p.indexOf(name) + 1, 0) / mine.length : null;
+function TrendBadge({ t }: { t: Trend | null }) {
+  if (!t) return <span className="muted" title={`Pas assez de courses (il en faut ${TREND_RECENT + 10})`}>–</span>;
+  const arrow = { up2: '▲▲', up: '▲', flat: '▬', down: '▼', down2: '▼▼' }[t.level];
+  return (
+    <span className={`trend trend-${t.level}`} title={`${fmtAvg(t.recent)} sur les ${TREND_RECENT} dernières courses, contre ${fmtAvg(t.before)} sur les ${TREND_BEFORE} précédentes`}>
+      <i aria-hidden="true">{arrow}</i>{t.label}
+    </span>
+  );
 }
 
 function Classement() {
-  const { races, dayList, player, lastSeen, elo } = useStore();
-  const sizes = useSessionSizes();
+  const { races, dayList, player, elo, activeNames, lastSeen } = useStore();
+  const { me } = useAuth();
   const [kind, setKindRaw] = useState<PeriodKind | 'custom'>(() => readPref('mk.period', 'month'));
   const [period, setPeriod] = useState<Period>(() => periodOf(kind === 'custom' ? 'month' : kind, dayList.at(-1)!));
   const [from, setFrom] = useState(() => dayKey(new Date(parseLocal(dayList.at(-1)!).getTime() - 30 * 864e5)));
   const [to, setTo] = useState(dayList.at(-1)!);
-  const [size, setSize] = useState('all');
-  const [withP, setWithP] = useState('');
   const [activeOnly, setActiveOnly] = useState<boolean>(() => readPref('mk.activeOnly', true));
+  const [who, setWho] = useState<string>(() => me ?? activeNames[0] ?? '');
   const setKind = (k: PeriodKind | 'custom') => {
     setKindRaw(k); writePref('mk.period', k);
     if (k !== 'custom') setPeriod(periodOf(k, dayList.at(-1)!));
@@ -70,13 +78,15 @@ function Classement() {
   const eff: Period = kind === 'custom' ? { kind: 'all', start: from, end: to + '~', label: `Du ${fmtShort(from)} au ${fmtShort(to)}`, key: from + to } : period;
   const prev = kind === 'custom' ? null : previousPeriod(period, dayList);
   const next = kind === 'custom' ? null : nextPeriod(period, dayList);
-  const filter = (p: Period | null) => p ? races.filter((r) => r.day >= p.start && r.day < p.end && sizeOk(sizes.get(r.day)!, size) && (!withP || r.p.includes(withP))) : [];
-  const cur = filter(eff);
+  const filter = (p: Period | null) => p ? races.filter((r) => r.day >= p.start && r.day < p.end) : [];
+  const cur = useMemo(() => filter(eff), [races, eff.key]);
   const endDay = cur.at(-1)?.day;
   const startDay = eff.kind === 'all' && kind !== 'custom' ? undefined : eff.start;
-  const rows = useMemo(() => rankedWithEvolution(standings(cur), prev ? standings(filter(prev)) : null), [cur.length, eff.key, prev?.key, size, withP]);
+  const rows = useMemo(() => rankedWithEvolution(standings(cur), prev ? standings(filter(prev)) : null), [cur, prev?.key]);
   const shown = rows.filter((r) => (!activeOnly || player(r.name).active) && r.name !== 'Other');
-  const allNames = [...lastSeen.keys()].filter((n) => n !== 'Other');
+  const sheet = useMemo(() => (who ? playerSheet(who, cur, races, elo, startDay) : null), [who, cur, races, elo, startDay]);
+  const others = [...lastSeen.keys()].filter((n) => n !== 'Other' && !activeNames.includes(n)).sort();
+  const pick = (n: string) => { setWho(n); document.getElementById('fiche')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   return (
     <>
@@ -101,60 +111,189 @@ function Classement() {
                 <button className="iconbtn" disabled={!next} onClick={() => next && setPeriod(next)} aria-label="Période suivante">›</button>
               </div>
             )}
-            <label className="field"><span>Taille de session</span>
-              <select id="size" value={size} onChange={(e) => setSize(e.target.value)}>{SIZES.map((s) => <option key={s.k} value={s.k}>{s.l}</option>)}</select>
-            </label>
-            <label className="field"><span>Courses avec</span>
-              <select id="with" value={withP} onChange={(e) => setWithP(e.target.value)}>
-                <option value="">Tout le monde</option>
-                {allNames.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
             <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 }}>
               <input id="active-only" type="checkbox" checked={activeOnly} onChange={(e) => { setActiveOnly(e.target.checked); writePref('mk.activeOnly', e.target.checked); }} style={{ accentColor: 'var(--cyan)', width: 18, height: 18 }} />
               <span style={{ letterSpacing: '0.08em' }}>Actifs uniquement</span>
             </label>
           </div>
-          <span className="hint">{cur.length} courses retenues</span>
+          <span className="hint">{cur.length} courses sur la période</span>
         </div>
       </Panel>
 
-      {shown.length === 0 ? <Empty>Aucune course ne correspond à ces filtres. Élargis la période ou la taille de session.</Empty> : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th><th className="r" title="Cote Elo en fin de période, et son évolution sur la période">Cote</th><th className="r">Courses</th>
-                <th className="r">Vict.</th><th className="r hide-sm">Podium</th>
-                <th className="r hide-sm" title="Moyenne sur les 5, 10 et 20 dernières courses de la sélection">5 · 10 · 20 dern.</th><th className="hide-sm">Places</th>
-              </tr>
-            </thead>
+      <div className="picker" role="radiogroup" aria-label="Pilote affiché" id="fiche">
+        {activeNames.map((n) => (
+          <button key={n} type="button" role="radio" aria-checked={who === n} className={`picker-chip ${who === n ? 'on' : ''}`} onClick={() => setWho(n)}>
+            <Avatar name={n} size={26} /><span>{player(n).displayName ?? n}</span>{n === me && <small>moi</small>}
+          </button>
+        ))}
+        {others.length > 0 && (
+          <select aria-label="Ancien pilote" value={others.includes(who) ? who : ''} onChange={(e) => e.target.value && setWho(e.target.value)}>
+            <option value="">Anciens pilotes…</option>
+            {others.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
+        {me && who !== me && <button type="button" className="btn btn-sm" onClick={() => setWho(me)}>Revenir à moi</button>}
+      </div>
+
+      {sheet ? <SheetView s={sheet} periodLabel={eff.label} trend={trendOf(who, races, endDay)} /> : (
+        <Panel><p className="muted" style={{ margin: 0 }}>{player(who).displayName ?? who} n'a pas couru sur cette période. Choisis une autre période ou un autre pilote.</p></Panel>
+      )}
+
+      <Section title={`Classement · ${eff.label}`}>
+        {shown.length === 0 ? <Empty>Aucune course sur cette période.</Empty> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th>
+                  <th className="r" title="Cote Elo en fin de période, et son évolution sur la période">Cote</th><th className="r">Courses</th>
+                  <th className="r">Vict.</th><th className="r hide-sm">Podium</th>
+                  <th className="hide-sm" title={`${TREND_RECENT} dernières courses comparées aux ${TREND_BEFORE} précédentes, à la fin de la période`}>Tendance</th><th className="hide-sm">Places</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r, i) => (
+                  <tr key={r.name} className={r.name === who ? 'row-selected' : ''} onClick={() => pick(r.name)} style={{ cursor: 'pointer' }}>
+                    <td className="rank">{i + 1}</td>
+                    <td className="hide-sm"><Delta delta={r.delta} isNew={r.isNew} /></td>
+                    <td><PlayerTag name={r.name} link={false} sub={player(r.name).active ? undefined : 'ancien'} /></td>
+                    <td className="r"><b><Avg v={r.avg} /></b></td>
+                    <td className="r"><Cote v={ratingAt(elo, r.name, endDay)} delta={startDay ? ratingAt(elo, r.name, endDay) - ratingAt(elo, r.name, startDay, true) : undefined} /></td>
+                    <td className="r num">{r.races}</td>
+                    <td className="r num good">{Math.round((r.wins / r.races) * 100)} %</td>
+                    <td className="r num hide-sm">{Math.round(((r.places[0] + r.places[1] + r.places[2]) / r.races) * 100)} %</td>
+                    <td className="hide-sm"><TrendBadge t={trendOf(r.name, races, endDay)} /></td>
+                    <td className="hide-sm" style={{ minWidth: 100 }}><PlacesBar places={r.places} total={r.races} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+      <p className="hint">Classement sur les positions relatives du groupe (1 à 4). Tri : moyenne, puis victoires, puis courses. Clique sur un pilote pour afficher sa fiche. Tendance : {TREND_RECENT} dernières courses comparées aux {TREND_BEFORE} précédentes (écart d'au moins 0,25 place pour parler de progression ou de régression).{prev ? ` ▲▼ par rapport à ${prev.label}.` : ''}</p>
+    </>
+  );
+}
+
+const pctTxt = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')} %`;
+const VERDICT: Record<H2HRow['verdict'], string> = { nemesis: 'Némésis', victim: 'Victime', ahead: 'Devant', behind: 'Derrière', even: 'Équilibré' };
+
+function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: string; trend: Trend | null }) {
+  const { player } = useStore();
+  const p = player(s.name);
+  const maxPlace = Math.max(...s.st.places);
+  const monthly = s.monthly;
+  return (
+    <div className="sheet">
+      <div className="chamfer-frame">
+        <header className="pilot-head chamfer sheet-head" style={{ '--c': p.color } as CSSProperties}>
+          <Avatar name={s.name} size={64} />
+          <div className="grow">
+            <span className="label">Fiche pilote · <span style={{ textTransform: 'capitalize' }}>{periodLabel}</span></span>
+            <h2>{p.displayName ?? s.name}</h2>
+            <span className="muted">{s.races} courses sur {s.days} jour{s.days > 1 ? 's' : ''} de jeu · {s.rank}e sur {s.field}</span>
+          </div>
+          <a className="btn btn-sm" href={href('pilote', s.name)}>Fiche complète</a>
+        </header>
+      </div>
+
+      <div className="kpis sheet-kpis">
+        <Panel hud="yellow"><Stat label="Position moyenne" tone="gold" value={<Avg v={s.st.avg} />} sub={`${s.rank}e sur ${s.field} pilotes`} /></Panel>
+        <Panel><Stat label="Victoires" tone={s.pctWin > 0.25 ? 'good' : ''} value={<span className="num">{s.st.wins}</span>} sub={`${pctTxt(s.pctWin)} · hasard 25 %`} /></Panel>
+        <Panel><Stat label="Top 2" tone={s.pctTop2 > 0.5 ? 'good' : 'bad'} value={<span className="num">{pctTxt(s.pctTop2)}</span>} sub="hasard 50 %" /></Panel>
+        <Panel><Stat label="Dernier" tone={s.pctLast < 0.25 ? 'good' : 'bad'} value={<span className="num">{pctTxt(s.pctLast)}</span>} sub="hasard 25 %" /></Panel>
+        <Panel><Stat label="Cote" tone="cyan" value={<Cote v={s.rating} delta={s.ratingDelta ?? undefined} />} sub="fin de période" /></Panel>
+        <Panel hud={trend && trend.delta > 0.25 ? 'green' : trend && trend.delta < -0.25 ? 'red' : undefined}>
+          <Stat label="Tendance actuelle" value={<TrendBadge t={trend} />} sub={trend ? `${fmtAvg(trend.recent)} sur ${TREND_RECENT} courses vs ${fmtAvg(trend.before)} avant` : 'pas assez de courses'} />
+        </Panel>
+      </div>
+
+      <div className="grid grid-2">
+        <Panel title="Répartition des places">
+          <table className="table compact">
+            <thead><tr><th>Place</th><th className="r">Nb</th><th className="r">%</th><th>Répartition</th></tr></thead>
             <tbody>
-              {shown.map((r, i) => (
-                <tr key={r.name}>
-                  <td className="rank">{i + 1}</td>
-                  <td className="hide-sm"><Delta delta={r.delta} isNew={r.isNew} /></td>
-                  <td><PlayerTag name={r.name} sub={player(r.name).active ? undefined : 'ancien'} /></td>
-                  <td className="r"><b><Avg v={r.avg} /></b></td>
-                  <td className="r"><Cote v={ratingAt(elo, r.name, endDay)} delta={startDay ? ratingAt(elo, r.name, endDay) - ratingAt(elo, r.name, startDay, true) : undefined} /></td>
-                  <td className="r num">{r.races}</td>
-                  <td className="r num good">{Math.round((r.wins / r.races) * 100)} %</td>
-                  <td className="r num hide-sm">{Math.round(((r.places[0] + r.places[1] + r.places[2]) / r.races) * 100)} %</td>
-                  <td className="r num hide-sm" style={{ whiteSpace: 'nowrap' }}>
-                    {[5, 10, 20].map((n) => {
-                      const v = lastN(cur, r.name, n);
-                      return <span key={n} className={v === null ? 'muted' : v < r.avg - 0.1 ? 'good' : v > r.avg + 0.1 ? 'bad' : ''} style={{ marginLeft: 8 }}>{v === null ? '–' : fmtAvg(v)}</span>;
-                    })}
-                  </td>
-                  <td className="hide-sm" style={{ minWidth: 100 }}><PlacesBar places={r.places} total={r.races} /></td>
+              {s.st.places.map((n, i) => (
+                <tr key={i}>
+                  <td><Pos n={i + 1} /></td>
+                  <td className="r num">{n}</td>
+                  <td className="r num">{pctTxt(n / s.st.races)}</td>
+                  <td style={{ width: '45%' }}><span className="hbar"><i className={`pl-${i + 1}`} style={{ width: `${maxPlace ? (n / maxPlace) * 100 : 0}%` }} /></span></td>
                 </tr>
               ))}
+              <tr className="total"><td>Total</td><td className="r num">{s.st.races}</td><td className="r num">100 %</td><td /></tr>
             </tbody>
           </table>
+        </Panel>
+        <Panel title="Séries et records">
+          <ul className="kv">
+            <li><span>Meilleure série de victoires</span><b className="num">{s.bestWinRun}</b></li>
+            <li><span>Plus longue série sans dernière place</span><b className="num">{s.noLastRun}</b></li>
+            <li><span>Plus longue série de dernières places</span><b className="num">{s.bestLastRun}</b></li>
+            <li><span>Série de victoires en cours</span><b className="num">{s.currentWinRun}</b></li>
+            <li><span>Meilleure journée</span><b className="num">{s.bestDay ? <>{fmtAvg(s.bestDay.avg)} <small>{fmtShort(s.bestDay.day)}</small></> : '–'}</b></li>
+            <li><span>Pire journée</span><b className="num">{s.worstDay ? <>{fmtAvg(s.worstDay.avg)} <small>{fmtShort(s.worstDay.day)}</small></> : '–'}</b></li>
+          </ul>
+          <span className="hint">Journées : 5 courses minimum.</span>
+        </Panel>
+      </div>
+
+      <Panel title={`Forme récente · ${s.recent.length} dernières courses`} aside={s.recentAvg !== null ? <span className="hint">moy. <b className="num" style={{ color: 'var(--white)' }}>{fmtAvg(s.recentAvg)}</b></span> : undefined}>
+        <div className="form-strip">
+          <span className="hint">ancien</span>
+          {s.recent.map(({ race, pos }) => (
+            <a key={race.id} href={href('session', race.day)} className={`form-cell pl-${pos}`} title={`${fmtShort(race.day)} · ${fmtTime(race.ts)}`}>
+              <b>{pos}</b><small>{fmtShort(race.day).replace(/\s\d{4}$/, '')}</small>
+            </a>
+          ))}
+          <span className="hint">récent</span>
         </div>
-      )}
-      <p className="hint">Classement sur les positions relatives du groupe (1 à 4), pas sur le rang affiché par le jeu. Tri : moyenne, puis victoires, puis courses. Cote : niveau Elo en fin de période (départ à 1500), avec son évolution sur la période.{prev ? ` ▲▼ par rapport à ${prev.label}.` : ''}</p>
-    </>
+      </Panel>
+
+      <div className="grid grid-2">
+        <Panel title="Par jour de la semaine">
+          {s.weekdays.some((w) => w.races) ? (
+            <AvgBars rows={s.weekdays.filter((w) => w.races && w.avg !== null).map((w) => ({ label: WEEKDAYS[w.day], avg: w.avg!, n: w.races }))} />
+          ) : <Empty>Aucune course.</Empty>}
+        </Panel>
+        <Panel hud="cyan" title="Évolution mensuelle · 12 mois" aside={<span className="hint">plus haut = meilleur</span>}>
+          <TrendChart labels={monthly.map((m) => fmtMonth(m.month, true))} best height={200}
+            series={[{ name: s.name, color: p.color, values: monthly.map((m) => m.avg), counts: monthly.map((m) => m.races) }]}
+            min={1} max={4} invert ticks={[1, 2, 3, 4]} format={(v) => (Number.isInteger(v) ? String(v) : fmtAvg(v))} />
+        </Panel>
+      </div>
+
+      <Panel title={`Face-à-face · ${p.displayName ?? s.name} contre chaque adversaire`} aside={<span className="hint">Némésis et victime : 10 courses communes minimum</span>}>
+        {(s.nemesis || s.victim) && (
+          <div className="h2h-callouts">
+            {s.nemesis && <span className="bad"><b>Némésis</b> · {player(s.nemesis.opp).displayName ?? s.nemesis.opp} finit devant dans {Math.round((1 - s.nemesis.pct) * 100)} % des duels ({s.nemesis.behind} sur {s.nemesis.shared})</span>}
+            {s.victim && <span className="good"><b>Victime favorite</b> · devant {player(s.victim.opp).displayName ?? s.victim.opp} dans {Math.round(s.victim.pct * 100)} % des duels ({s.victim.ahead} sur {s.victim.shared})</span>}
+          </div>
+        )}
+        {s.h2h.length === 0 ? <Empty>Pas assez de courses en commun sur cette période.</Empty> : (
+          <div className="table-wrap">
+            <table className="table compact">
+              <thead><tr><th>Adversaire</th><th className="r">Communes</th><th className="r">Devant</th><th className="r hide-sm">Derrière</th><th className="r">Bilan</th><th className="r">% duels</th><th className="hide-sm" style={{ minWidth: 160 }}>Il domine · tu domines</th><th>Verdict</th></tr></thead>
+              <tbody>
+                {[...s.h2h].reverse().map((r) => (
+                  <tr key={r.opp}>
+                    <td><a href={href('rivalites', s.name, r.opp)}><PlayerTag name={r.opp} link={false} size={24} /></a></td>
+                    <td className="r num">{r.shared}</td>
+                    <td className="r num good">{r.ahead}</td>
+                    <td className="r num bad hide-sm">{r.behind}</td>
+                    <td className={`r num ${r.ahead >= r.behind ? 'good' : 'bad'}`}>{r.ahead - r.behind > 0 ? '+' : ''}{r.ahead - r.behind}</td>
+                    <td className="r num">{Math.round(r.pct * 100)} %</td>
+                    <td className="hide-sm"><span className="dbar"><i className={r.pct >= 0.5 ? 'pos' : 'neg'} style={{ width: `${Math.abs(r.pct - 0.5) * 100}%`, [r.pct >= 0.5 ? 'left' : 'right']: '50%' } as CSSProperties} /></span></td>
+                    <td><span className={`verdict v-${r.verdict}`}>{VERDICT[r.verdict]}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+    </div>
   );
 }
 
