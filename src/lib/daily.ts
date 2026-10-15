@@ -51,7 +51,7 @@ export function horoscope(name: string, races: Race[], day: string): Horoscope {
   }
   const star = seed % 2 === 0 ? nemesis?.opp ?? null : victim?.opp ?? null;
   if (star && nemesis && star === nemesis.opp) lines.push(`Astre menaçant : ${star}. Tu ne finis devant que ${Math.round(nemesis.pct * 100)} % du temps.`);
-  else if (star && victim) lines.push(`Astre favorable : ${star}. Tu le devances ${Math.round(victim.pct * 100)} % du temps.`);
+  else if (star && victim) lines.push(`Astre favorable : ${star}. Tu finis devant ${Math.round(victim.pct * 100)} % du temps.`);
   lines.push(pick(ADVICE, seed >>> 3));
   return { sign: pick(SIGNS, seedOf(name)), lines: lines.slice(0, 4), star, lucky: 1 + (seed % 4) };
 }

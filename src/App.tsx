@@ -8,7 +8,8 @@ import { Pilote } from './pages/Pilote';
 import { Profil } from './pages/Profil';
 import { useRoute } from './router';
 import { StoreProvider, useStore } from './store';
-import { BrandMark } from './components/ui';
+import { AuthProvider, useAuth } from './auth';
+import { Avatar, BrandMark } from './components/ui';
 import { dayKey, sessionState } from './lib/stats';
 
 const NAV = [
@@ -35,6 +36,20 @@ function SessionChip() {
       {live ? 'En course' : <>Terminée<span className="long">&nbsp;· {byDay.get(today)!.length} courses</span></>}
     </a>
   );
+}
+
+function MeButton({ compact }: { compact?: boolean }) {
+  const { me, live, session } = useAuth();
+  const { player } = useStore();
+  if (me) {
+    return (
+      <a className="btn btn-sm me-chip" href="#/profil" aria-label="Mon profil">
+        <Avatar name={me} size={20} /><span className="me-name">{player(me).displayName ?? me}</span>
+      </a>
+    );
+  }
+  const label = !live ? (compact ? 'Démo' : 'Mode démo') : session ? 'Choisir mon pilote' : 'Connexion';
+  return <a className="btn btn-sm" href="#/profil">{label}</a>;
 }
 
 function Shell() {
@@ -71,7 +86,7 @@ function Shell() {
         </a>
         <nav className="nav" aria-label="Sections">{navLinks('')}</nav>
         <div className="sidebar-foot">
-          <a className="btn btn-sm" href="#/profil">{source === 'demo' ? 'Mode démo' : 'Mon profil'}</a>
+          <MeButton />
         </div>
       </aside>
       <div className="main">
@@ -80,7 +95,7 @@ function Shell() {
           <span className="topbar-title">{TITLES[page] ?? 'Paddock'}</span>
           <div className="topbar-right">
             <SessionChip />
-            <a className="btn btn-sm" href="#/profil" aria-label="Profil">{source === 'demo' ? 'Démo' : 'Profil'}</a>
+            <MeButton compact />
           </div>
         </header>
         <main className="content">{body}</main>
@@ -111,5 +126,5 @@ function Waiting() {
 }
 
 export default function App() {
-  return <StoreProvider><Shell /></StoreProvider>;
+  return <AuthProvider><StoreProvider><Shell /></StoreProvider></AuthProvider>;
 }

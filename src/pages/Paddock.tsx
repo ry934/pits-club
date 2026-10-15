@@ -7,6 +7,8 @@ import { dailyChallenge, horoscope, nextDeadline, rivalryOfTheDay } from '../lib
 import { dayKey, fmtAvg, fmtDay, fmtMonth, fmtShort, fmtTime, monthKey, sessionSummary, standings } from '../lib/stats';
 import { href } from '../router';
 import { useStore } from '../store';
+import { useAuth } from '../auth';
+import { MyPaddock } from './MyPaddock';
 
 export function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(() => new Date());
@@ -29,6 +31,7 @@ export function Countdown({ to }: { to: Date }) {
 
 export function Paddock() {
   const { races, byDay, dayList, elo, activeNames, player, badges } = useStore();
+  const { me, live, session } = useAuth();
   const today = dayKey(new Date());
   const lastDay = dayList.at(-1)!;
   const month = monthKey(lastDay);
@@ -37,7 +40,7 @@ export function Paddock() {
   const second = season[1];
   const last = useMemo(() => sessionSummary(lastDay, byDay.get(lastDay)!, elo), [lastDay, byDay, elo]);
   const allTime = useMemo(() => standings(races).filter((s) => activeNames.includes(s.name)), [races, activeNames]);
-  const [astroFor, setAstroFor] = useState(() => activeNames[0]);
+  const [astroFor, setAstroFor] = useState(() => activeNames.find((n) => n !== me) ?? activeNames[0]);
   const astro = useMemo(() => horoscope(astroFor, races, today), [astroFor, races, today]);
   const rivalry = useMemo(() => rivalryOfTheDay(races, activeNames, today), [races, activeNames, today]);
   const challenge = useMemo(() => dailyChallenge(today, races, byDay.get(today) ?? []), [today, races, byDay]);
@@ -46,6 +49,15 @@ export function Paddock() {
 
   return (
     <div className="page">
+      {live && session && !me && (
+        <div className="notice"><b>Inscription</b><span>Il te reste une étape : <a className="link" href="#/profil">choisis le pilote qui te correspond</a> pour retrouver ton paddock personnel.</span></div>
+      )}
+      {me && (
+        <>
+          <MyPaddock name={me} />
+          <h2 className="label paddock-divider">Le paddock</h2>
+        </>
+      )}
       {leader && (
         <div className="chamfer-frame">
           <section className="hero chamfer" style={{ '--c': player(leader.name).color } as CSSProperties}>
@@ -131,9 +143,9 @@ export function Paddock() {
             </div>
           </Panel>
 
-          <Panel hud="purple" title="Horoscope du jour" className="horoscope" aside={
+          <Panel hud="purple" title={me ? 'Horoscope des autres' : 'Horoscope du jour'} className="horoscope" aside={
             <select id="astro-player" aria-label="Pilote" value={astroFor} onChange={(e) => setAstroFor(e.target.value)}>
-              {activeNames.map((n) => <option key={n} value={n}>{n}</option>)}
+              {activeNames.map((n) => <option key={n} value={n}>{player(n).displayName ?? n}</option>)}
             </select>
           }>
             <div className="stack">

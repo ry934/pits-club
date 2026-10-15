@@ -519,3 +519,17 @@ select:hover, input:hover, textarea:hover { border-color: var(--steel); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ------------------------------------------------------------ paddock personnel */
+.me-hero { min-height: 0; }
+.me-hello { margin: 0; font: 700 clamp(1.3rem, 3.2vw, 1.9rem)/1.2 var(--font-display); max-width: 40ch; text-wrap: pretty; }
+.paddock-divider { display: flex; align-items: center; gap: 12px; color: var(--steel); margin-top: 6px; }
+.paddock-divider::after { content: ''; flex: 1; height: 1px; background: var(--edge); }
+.me-chip { display: inline-flex; align-items: center; gap: 8px; font: 700 0.8rem/1 var(--font-display); letter-spacing: 0.06em; }
+@media (max-width: 640px) { .me-chip .me-name { display: none; } }
+
+.claim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.claim-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px; background: rgba(16, 19, 33, 0.6); border: 1px solid var(--edge); border-radius: var(--r); cursor: pointer; color: var(--white); font: inherit; }
+.claim-card:hover { border-color: var(--steel); }
+.claim-card.on { border-color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow), 0 0 18px -8px var(--yellow); }
+.claim-card b { font-family: var(--font-display); }
