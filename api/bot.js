@@ -173,6 +173,15 @@ function resolveTake(rule, dayRaces) {
     }
   }
 }
+function mulberry32(seed) {
+  return () => {
+    seed |= 0;
+    seed = seed + 1831565813 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
 function seedOf(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -181,11 +190,55 @@ function seedOf(s) {
   }
   return h >>> 0;
 }
+function estimateProbability(rule, lineup, ratings, racesPerSession, sims = 1200, seed = 1) {
+  const rnd = mulberry32(seed);
+  const players = [.../* @__PURE__ */ new Set([...lineup, ...rulePlayers(rule)])];
+  if (players.length < 4) return 0.5;
+  const strength = new Map(players.map((p) => [p, 10 ** ((ratings.get(p) ?? 1500) / 400)]));
+  let won = 0, counted = 0;
+  for (let s = 0; s < sims; s++) {
+    const nRaces = Math.max(3, Math.round(racesPerSession + (rnd() - 0.5) * racesPerSession * 0.6));
+    const sim = [];
+    for (let k = 0; k < nRaces; k++) {
+      const pool = [...players];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      const seat = pool.slice(0, 4);
+      const order = [];
+      while (seat.length) {
+        const tot = seat.reduce((a, p) => a + strength.get(p), 0);
+        let x = rnd() * tot, idx = 0;
+        while ((x -= strength.get(seat[idx])) > 0 && idx < seat.length - 1) idx++;
+        order.push(seat.splice(idx, 1)[0]);
+      }
+      sim.push({ id: k, ts: /* @__PURE__ */ new Date(0), iso: "", day: "sim", p: order, src: "app" });
+    }
+    const out = resolveTake(rule, sim);
+    if (out === "void") continue;
+    counted++;
+    if (out === "won") won++;
+  }
+  return counted ? won / counted : 0.5;
+}
+function takeContext(races, before) {
+  const byDay = /* @__PURE__ */ new Map();
+  for (const r of races) if (!before || r.day < before) (byDay.get(r.day) ?? byDay.set(r.day, []).get(r.day)).push(r);
+  const days = [...byDay.keys()].sort();
+  const last = days.at(-1);
+  const lineup = [...new Set((last ? byDay.get(last) : []).flatMap((r) => r.p))].filter((x) => x !== "Other");
+  const recent = days.slice(-20);
+  const avgRaces = recent.length ? recent.reduce((a, d) => a + byDay.get(d).length, 0) / recent.length : 12;
+  return { lineup, avgRaces };
+}
+var pointsFor = (p) => Math.min(100, Math.max(10, Math.round(10 / Math.max(p, 0.01))));
 
 // src/lib/bot/facts.ts
 function takeVerdict(t, dayRaces) {
   if (t.status !== "pending") return t.status;
-  if (!t.rule) return "manual";
+  if (t.validation === "refused") return "void";
+  if (!t.rule || t.validation === "draft") return "manual";
   return resolveTake(t.rule, dayRaces);
 }
 function sessionFacts(day, all, elo, takes = []) {
@@ -504,6 +557,16 @@ function factsFrom(p, revealedOnly = true) {
   const takes = p.takes.filter((t) => !revealedOnly || t.revealed);
   return sessionFacts(p.day, races, elo, takes);
 }
+var draftsToAnalyse = (p) => p.takes.filter((t) => t.validation === "draft" && !t.revealed);
+var takePlayers = (p) => p.players.filter((x) => x.active && x.name !== "Other").map((x) => ({ name: x.name, display: x.display_name || x.name, aliases: x.aliases ?? [] }));
+function oddsFor(p, rule) {
+  const raw = p.races.map(([ts, a, b, c, d, src]) => ({ ts, p: [a, b, c, d], src }));
+  const { races } = cleanRaces(raw);
+  const elo = computeElo(races);
+  const { lineup, avgRaces } = takeContext(races, p.day);
+  const prob = estimateProbability(rule, lineup, elo.rating, avgRaces, 1500, 7);
+  return { probability: Math.round(prob * 1e3) / 1e3, points: pointsFor(prob) };
+}
 var fmtDeadline = (v) => str(v, "13:00").replace(":", "h");
 function composeMessage(kind, p, opts = {}) {
   const o = optionsFrom(p, opts.salt);
@@ -721,10 +784,66 @@ async function build(p, kind, salt, revealedOnly = true) {
   if (aiError && !("error" in m)) m.meta = { ...m.meta, ai_error: aiError };
   return m;
 }
+var UNCLEAR = "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise.";
+async function parseTake(text, author, list) {
+  if (!aiKey()) return { ok: false, unavailable: true, reason: "L'IA n'est pas encore branch\xE9e : ton Take sera arbitr\xE9 \xE0 la main." };
+  const aliasMap = Object.fromEntries(list.map((p) => [p.name, [p.display, ...p.aliases ?? []]]));
+  try {
+    const { system, user } = takePrompt(text, author, list);
+    const out = firstJson(await ai(PARSE_CHAIN, system, user, 300, true));
+    if (!out?.ok) return { ok: false, reason: out?.reason ?? UNCLEAR };
+    const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
+    if (!rule) return { ok: false, reason: UNCLEAR };
+    const show = (n) => list.find((p) => p.name === n)?.display ?? n;
+    return { ok: true, rule, label: ruleLabel(rule, show) };
+  } catch {
+    return { ok: false, unavailable: true, reason: "L'IA ne r\xE9pond pas pour le moment : ton Take sera arbitr\xE9 \xE0 la main." };
+  }
+}
+async function analyseDrafts(p) {
+  const secret = env("BOT_SECRET");
+  const list = takePlayers(p);
+  const res = { validated: 0, refused: 0, left: 0 };
+  for (const t of draftsToAnalyse(p)) {
+    const r = await parseTake(t.text, t.author, list);
+    if (!r.ok && r.unavailable) {
+      res.left++;
+      continue;
+    }
+    const odds = r.ok ? oddsFor(p, r.rule) : null;
+    await rpc("bot_take_result", {
+      secret,
+      p_id: t.id,
+      p_validation: r.ok ? "validated" : "refused",
+      p_rule: r.ok ? r.rule : null,
+      p_label: r.ok ? r.label : null,
+      p_probability: odds?.probability ?? null,
+      p_points: odds?.points ?? null,
+      p_note: r.ok ? "Valid\xE9 automatiquement par l'IA \xE0 la cl\xF4ture" : `Refus\xE9 par l'IA \xE0 la cl\xF4ture : ${r.reason}`
+    });
+    if (r.ok) res.validated++;
+    else res.refused++;
+  }
+  return res;
+}
+var draftSummary = (r) => `${r.validated} valid\xE9${r.validated > 1 ? "s" : ""}, ${r.refused} refus\xE9${r.refused > 1 ? "s" : ""}${r.left ? `, ${r.left} en attente (IA muette)` : ""}`;
 async function processLog(logId) {
   const secret = env("BOT_SECRET");
   const p = await rpc("bot_payload", { secret, p_log: logId });
   if (!p.log) return { ok: false, error: "entr\xE9e inconnue" };
+  if (p.log.kind === "takes") {
+    try {
+      const r = await analyseDrafts(p);
+      const body = `Analyse des brouillons : ${draftSummary(r)}`;
+      await rpc("bot_result", { secret, p_log: logId, p_status: r.left ? "failed" : "sent", p_body: body, p_error: r.left ? "IA indisponible pour une partie des Takes" : null });
+      return { ok: !r.left, body };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      await rpc("bot_result", { secret, p_log: logId, p_status: "failed", p_body: null, p_error: error }).catch(() => {
+      });
+      return { ok: false, error };
+    }
+  }
   try {
     const m = await build(p, p.log.kind);
     if ("error" in m) {
@@ -761,7 +880,6 @@ async function POST(req) {
   if (action === "parse-take") {
     const text = String(body.text ?? "").trim().slice(0, 280);
     if (text.length < 3) return json({ ok: false, reason: "Ton Take est vide." });
-    if (!aiKey()) return json({ ok: false, unavailable: true, reason: "L'IA n'est pas encore branch\xE9e : ton Take sera arbitr\xE9 \xE0 la main." });
     const sbHeaders = { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` };
     const [meRes, plRes] = await Promise.all([
       fetch(`${SB_URL()}/rest/v1/players?select=name&user_id=eq.${user.id}`, { headers: sbHeaders }),
@@ -770,19 +888,7 @@ async function POST(req) {
     const me = (await meRes.json())[0]?.name;
     if (!me) return json({ ok: false, reason: "Seuls les pilotes peuvent poster un Take." });
     const players = await plRes.json();
-    const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name, aliases: p.aliases ?? [] }));
-    const aliasMap = Object.fromEntries(list.map((p) => [p.name, [p.display, ...p.aliases]]));
-    try {
-      const { system, user: u } = takePrompt(text, me, list);
-      const out = firstJson(await ai(PARSE_CHAIN, system, u, 300, true));
-      if (!out?.ok) return json({ ok: false, reason: out?.reason ?? "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
-      const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
-      if (!rule) return json({ ok: false, reason: "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
-      const show = (n) => list.find((p) => p.name === n)?.display ?? n;
-      return json({ ok: true, rule, label: ruleLabel(rule, show) });
-    } catch (e) {
-      return json({ ok: false, unavailable: true, reason: "L'IA ne r\xE9pond pas pour le moment : ton Take sera arbitr\xE9 \xE0 la main.", detail: String(e) });
-    }
+    return json(await parseTake(text, me, players.map((p) => ({ name: p.name, display: p.display_name || p.name, aliases: p.aliases ?? [] }))));
   }
   const admin = await rpc("is_admin", {}, jwt).catch(() => false);
   if (!admin) return json({ error: "R\xE9serv\xE9 aux admins" }, 403);
@@ -800,6 +906,11 @@ async function POST(req) {
       }
     }
     return json({ slack: !!env("SLACK_WEBHOOK_URL"), ai: aiOk, aiError, secret: secretOk });
+  }
+  if (action === "analyse-takes") {
+    const p = await rpc("bot_payload", { secret: env("BOT_SECRET"), p_log: null, p_day: null });
+    const r = await analyseDrafts(p);
+    return json({ ok: true, ...r, text: draftSummary(r) });
   }
   const kind = String(body.kind ?? "debrief");
   if (!["debrief", "extra", "reminder", "test"].includes(kind)) return json({ error: "type inconnu" }, 400);

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth';
 import { Panel, PlayerTag } from '../components/ui';
-import { LiveTake, sessionFacts, takeVerdict, TakeVerdict } from '../lib/bot/facts';
+import { LiveTake, sessionFacts, takeVerdict, TakeValidation, TakeVerdict } from '../lib/bot/facts';
 import { buildDebrief, buildExtra, buildReminder, buildTest, BotOptions, SlackMessage } from '../lib/bot/messages';
 import { callBot, AppSettings, DEFAULT_SETTINGS, fmtHour, useSettings } from '../lib/settings';
 import { dayKey, fmtDay, fmtShort } from '../lib/stats';
@@ -18,7 +18,7 @@ type LogRow = { id: number; kind: string; day: string; status: string; body: str
 type AdminTake = LiveTake & { day: string };
 type Status = { slack: boolean; ai: boolean; aiError?: string | null; secret: boolean } | null;
 
-const KIND_LABEL: Record<string, string> = { debrief: 'Débrief', extra: 'Prolongations', reminder: 'Rappel Takes', test: 'Test' };
+const KIND_LABEL: Record<string, string> = { debrief: 'Débrief', extra: 'Prolongations', reminder: 'Rappel Takes', test: 'Test', takes: 'Analyse IA des Takes' };
 const STATUS_LABEL: Record<string, string> = { sent: 'Envoyé', failed: 'Échec', skipped: 'Non envoyé', pending: 'En cours' };
 const DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const TONES: { k: AppSettings['bot_tone']; label: string; desc: string }[] = [
@@ -49,13 +49,14 @@ export function Admin() {
     const [lg, st, tk] = await Promise.all([
       sb.from('bot_log').select('*').order('id', { ascending: false }).limit(30),
       sb.from('bot_state').select('last_tick').maybeSingle(),
-      sb.from('takes').select('id, day, raw_text, rule, rule_label, probability, points_if_won, status, revealed, author:players(name)').eq('revealed', true).gte('day', since).order('day', { ascending: false }),
+      sb.from('takes').select('id, day, raw_text, rule, rule_label, probability, points_if_won, status, revealed, validation, admin_validation, author:players(name)').eq('revealed', true).gte('day', since).order('day', { ascending: false }),
     ]);
     setLogs((lg.data ?? []) as LogRow[]);
     setLastTick(st.data?.last_tick ? new Date(st.data.last_tick) : null);
     setTakes((tk.data ?? []).map((t) => ({
       id: t.id, day: t.day, author: (t.author as unknown as { name: string } | null)?.name ?? '?', text: t.raw_text, rule: t.rule, label: t.rule_label,
       probability: t.probability, points: t.points_if_won, status: t.status, revealed: t.revealed,
+      validation: (t.admin_validation ?? t.validation ?? 'validated') as TakeValidation,
     })));
     callBot<{ slack: boolean; ai: boolean; aiError?: string | null; secret: boolean; error?: string }>({ action: 'status' })
       .then((r) => { if (r.error) setStatusErr(r.error); else setStatus(r); })
@@ -165,6 +166,7 @@ export function Admin() {
         <Composer settings={local} logs={logs} onSent={loadAll} />
       </div>
 
+      <TakesValidation onChange={loadAll} />
       <TakesReview takes={takes} onChange={loadAll} />
 
       <Panel title="Journal des envois" aside={<button className="btn btn-sm" onClick={loadAll}>Actualiser</button>}>
@@ -239,10 +241,10 @@ function Composer({ settings, logs, onSent }: { settings: AppSettings; logs: Log
     (async () => {
       const sb = (await getSupabase())!;
       const [t, n] = await Promise.all([
-        sb.from('takes').select('id, raw_text, rule, rule_label, probability, points_if_won, status, revealed, author:players(name)').eq('day', day).eq('revealed', true),
+        sb.from('takes').select('id, raw_text, rule, rule_label, probability, points_if_won, status, revealed, validation, admin_validation, author:players(name)').eq('day', day).eq('revealed', true),
         sb.rpc('takes_posted_names', { on_day: day }),
       ]);
-      setTakes((t.data ?? []).map((x) => ({ id: x.id, author: (x.author as unknown as { name: string } | null)?.name ?? '?', text: x.raw_text, rule: x.rule, label: x.rule_label, probability: x.probability, points: x.points_if_won, status: x.status, revealed: true })));
+      setTakes((t.data ?? []).map((x) => ({ id: x.id, author: (x.author as unknown as { name: string } | null)?.name ?? '?', text: x.raw_text, rule: x.rule, label: x.rule_label, probability: x.probability, points: x.points_if_won, status: x.status, revealed: true, validation: (x.admin_validation ?? x.validation ?? 'validated') as TakeValidation })));
       setPosted(((n.data ?? []) as { name: string }[]).map((x) => x.name));
     })();
   }, [day, live]);
@@ -308,6 +310,88 @@ function Composer({ settings, logs, onSent }: { settings: AppSettings; logs: Log
         </div>
         <span className="hint">L'aperçu suit le ton et les exclusions réglés ici. L'envoi part tout de suite dans le canal, avec une nouvelle rédaction{settings.ai_pen ? ' (plume IA si disponible)' : ''}.</span>
         {msg && <p className="form-msg">{msg}</p>}
+      </div>
+    </Panel>
+  );
+}
+
+type DayTake = { id: string; author: string; text: string; rule_label: string | null; probability: number | null; points: number | null;
+  ai: TakeValidation; admin: TakeValidation | null; note: string | null; revealed: boolean };
+
+const AI_LABEL: Record<TakeValidation, string> = { draft: 'Brouillon (pas encore analysé)', validated: 'Validée', refused: 'Refusée' };
+
+/**
+ * Validation des Takes du jour, avant comme après le verrouillage : la décision de l'admin l'emporte,
+ * « Auto » laisse celle de l'IA (y compris l'analyse automatique des brouillons au verrouillage).
+ */
+function TakesValidation({ onChange }: { onChange: () => void }) {
+  const { live } = useAuth();
+  const { player } = useStore();
+  const [rows, setRows] = useState<DayTake[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const today = dayKey(new Date());
+
+  const load = useCallback(async () => {
+    if (!live) { setRows([]); return; }
+    const { data, error } = await (await getSupabase())!.from('takes')
+      .select('id, raw_text, rule_label, probability, points_if_won, validation, admin_validation, validation_note, revealed, author:players(name)')
+      .eq('day', today).order('updated_at', { ascending: false });
+    if (error) { setErr(/validation/.test(error.message) ? 'Lance le script 010_takes_validation.sql dans Supabase.' : error.message); setRows([]); return; }
+    setRows((data ?? []).map((t) => ({
+      id: t.id, author: (t.author as unknown as { name: string } | null)?.name ?? '?', text: t.raw_text, rule_label: t.rule_label,
+      probability: t.probability, points: t.points_if_won, ai: t.validation, admin: t.admin_validation, note: t.validation_note, revealed: t.revealed,
+    })));
+  }, [live, today]);
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (id: string, v: string) => {
+    setErr(null);
+    const { error } = await (await getSupabase())!.rpc('admin_validate_take', { p_id: id, p_decision: v || null });
+    if (error) setErr(error.message); else { load(); onChange(); }
+  };
+  const analyse = async () => {
+    setBusy(true); setErr(null); setInfo(null);
+    try {
+      const r = await callBot<{ ok?: boolean; text?: string; error?: string }>({ action: 'analyse-takes' });
+      if (r.error) setErr(r.error); else setInfo(`Analyse terminée : ${r.text}`);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    setBusy(false); load(); onChange();
+  };
+
+  const drafts = rows?.filter((r) => r.ai === 'draft' && !r.admin).length ?? 0;
+  return (
+    <Panel hud="purple" title="Validation des Takes du jour" aside={live && drafts > 0 ? <button className="btn btn-sm" disabled={busy} onClick={analyse}>{busy ? 'Analyse…' : `Faire analyser ${drafts} brouillon${drafts > 1 ? 's' : ''} par l'IA`}</button> : undefined}>
+      <div className="stack">
+        <span className="hint">Visible des admins uniquement, contenu compris. « Auto » laisse la main à l'IA : validation à la demande du pilote, et analyse automatique des brouillons au verrouillage. Ta décision l'emporte, avant comme après le verrouillage ; elle saute si le pilote réécrit son Take.</span>
+        {rows === null ? <p className="hint" style={{ margin: 0 }}>Chargement…</p> : rows.length === 0 ? <p className="hint" style={{ margin: 0 }}>Aucun Take aujourd'hui.</p> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Pilote</th><th>Take</th><th>IA</th><th>Décision</th></tr></thead>
+              <tbody>
+                {rows.map((t) => (
+                  <tr key={t.id} className={(t.admin ?? t.ai) === 'draft' ? 'needs-review' : ''}>
+                    <td><PlayerTag name={t.author} size={24} /></td>
+                    <td>
+                      <span className="take-text">« {t.text} »</span>
+                      {t.rule_label && <span className="take-rule" style={{ display: 'block' }}>{t.rule_label}</span>}
+                      {t.probability != null && <span className="hint num" style={{ display: 'block' }}>{Math.round(t.probability * 100)} % · {t.points} pts</span>}
+                    </td>
+                    <td>{t.ai === 'validated' && !t.rule_label ? 'Validée (arbitrage manuel)' : AI_LABEL[t.ai]}{t.note && <span className="hint" style={{ display: 'block' }}>{t.note}</span>}</td>
+                    <td>
+                      <select aria-label={`Validation du Take de ${player(t.author).displayName ?? t.author}`} value={t.admin ?? ''} onChange={(e) => decide(t.id, e.target.value)}>
+                        <option value="">Auto (IA)</option><option value="validated">Validée</option><option value="refused">Refusée</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {info && <p className="hint" style={{ margin: 0 }}>{info}</p>}
+        {err && <p className="form-msg">{err}</p>}
       </div>
     </Panel>
   );

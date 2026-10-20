@@ -1,5 +1,5 @@
 import { cleanRaces, computeElo } from '../stats';
-import { RULE_KINDS, TakeRule } from '../takes';
+import { estimateProbability, pointsFor, RULE_KINDS, takeContext, TakeRule } from '../takes';
 import { RawRace } from '../types';
 import { LiveTake, sessionFacts, SessionFacts } from './facts';
 import { BotOptions, BotTone, buildDebrief, buildExtra, buildReminder, buildTest, debriefStory, SlackMessage } from './messages';
@@ -10,10 +10,10 @@ import { BotOptions, BotTone, buildDebrief, buildExtra, buildReminder, buildTest
  */
 
 export type Payload = {
-  log: { id: number; kind: 'debrief' | 'extra' | 'reminder' | 'test'; day: string; manual: boolean } | null;
+  log: { id: number; kind: 'debrief' | 'extra' | 'reminder' | 'test' | 'takes'; day: string; manual: boolean } | null;
   day: string;
   settings: Record<string, unknown>;
-  players: { name: string; display_name: string | null; color: string; active: boolean }[];
+  players: { name: string; display_name: string | null; color: string; active: boolean; aliases?: string[] | null }[];
   races: [string, string, string, string, string, string][];
   closures: string[];
   takes: (Omit<LiveTake, 'rule'> & { rule: TakeRule | null })[];
@@ -43,6 +43,23 @@ export function factsFrom(p: Payload, revealedOnly = true): SessionFacts | null 
   const elo = computeElo(races);
   const takes = p.takes.filter((t) => !revealedOnly || t.revealed) as LiveTake[];
   return sessionFacts(p.day, races, elo, takes);
+}
+
+/** Brouillons du jour jamais validés (ni par le pilote, ni par un admin) : l'IA s'en charge à la clôture. */
+export const draftsToAnalyse = (p: Payload) => p.takes.filter((t) => t.validation === 'draft' && !t.revealed);
+
+/** Pilotes actifs au format attendu par le prompt des Takes. */
+export const takePlayers = (p: Payload): TakePlayer[] =>
+  p.players.filter((x) => x.active && x.name !== 'Other').map((x) => ({ name: x.name, display: x.display_name || x.name, aliases: x.aliases ?? [] }));
+
+/** Probabilité et gain d'une règle, calculés comme dans l'app (même simulation, même graine). */
+export function oddsFor(p: Payload, rule: TakeRule): { probability: number; points: number } {
+  const raw: RawRace[] = p.races.map(([ts, a, b, c, d, src]) => ({ ts, p: [a, b, c, d], src: src as RawRace['src'] }));
+  const { races } = cleanRaces(raw);
+  const elo = computeElo(races);
+  const { lineup, avgRaces } = takeContext(races, p.day);
+  const prob = estimateProbability(rule, lineup, elo.rating, avgRaces, 1500, 7);
+  return { probability: Math.round(prob * 1000) / 1000, points: pointsFor(prob) };
 }
 
 export const fmtDeadline = (v: unknown) => str(v, '13:00').replace(':', 'h');

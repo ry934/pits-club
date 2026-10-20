@@ -117,5 +117,20 @@ export function estimateProbability(rule: TakeRule, lineup: string[], ratings: M
   return counted ? won / counted : 0.5;
 }
 
+/**
+ * Contexte de la cote, tel que l'app le calcule : présents de la dernière session et nombre moyen de courses
+ * sur les 20 dernières sessions. `before` exclut la journée en cours.
+ */
+export function takeContext(races: Race[], before?: string): { lineup: string[]; avgRaces: number } {
+  const byDay = new Map<string, Race[]>();
+  for (const r of races) if (!before || r.day < before) (byDay.get(r.day) ?? byDay.set(r.day, []).get(r.day)!).push(r);
+  const days = [...byDay.keys()].sort();
+  const last = days.at(-1);
+  const lineup = [...new Set((last ? byDay.get(last)! : []).flatMap((r) => r.p))].filter((x) => x !== 'Other');
+  const recent = days.slice(-20);
+  const avgRaces = recent.length ? recent.reduce((a, d) => a + byDay.get(d)!.length, 0) / recent.length : 12;
+  return { lineup, avgRaces };
+}
+
 /** Gain si le Take passe : 10 ÷ probabilité, plafonné à 100 points. */
 export const pointsFor = (p: number) => Math.min(100, Math.max(10, Math.round(10 / Math.max(p, 0.01))));

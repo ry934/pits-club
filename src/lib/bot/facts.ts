@@ -10,14 +10,22 @@ import { Race, SETTINGS } from '../types';
 export type LiveTake = {
   id: string; author: string; text: string; rule: TakeRule | null; label: string | null;
   probability: number | null; points: number | null; status: 'pending' | TakeOutcome; revealed: boolean;
+  /** Validation effective (décision admin, sinon IA). Absente = validé (anciens Takes). */
+  validation?: TakeValidation;
 };
+
+export type TakeValidation = 'draft' | 'validated' | 'refused';
 
 export type TakeVerdict = TakeOutcome | 'manual';
 
-/** Verdict d'un Take : forcé par un admin, sinon calculé sur les courses, sinon à arbitrer. */
+/**
+ * Verdict d'un Take : forcé par un admin, sinon annulé s'il a été refusé, sinon calculé sur les courses, sinon à arbitrer
+ * (règle absente ou brouillon que l'IA n'a pas pu analyser).
+ */
 export function takeVerdict(t: LiveTake, dayRaces: Race[]): TakeVerdict {
   if (t.status !== 'pending') return t.status;
-  if (!t.rule) return 'manual';
+  if (t.validation === 'refused') return 'void';
+  if (!t.rule || t.validation === 'draft') return 'manual';
   return resolveTake(t.rule, dayRaces);
 }
 

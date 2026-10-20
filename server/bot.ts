@@ -3,8 +3,9 @@
  *
  * Appels possibles (POST, JSON) :
  * - par la base (planificateur, chaque minute) : en-tête x-bot-secret + { log_id } → rédige et poste le message ;
+ *   (type « takes » : l'IA analyse les brouillons de Takes jamais validés, rien n'est posté sur Slack) ;
  * - par un pilote connecté (Authorization: Bearer <jeton>) : { action: 'parse-take', text } → règle vérifiable ;
- * - par un admin connecté : { action: 'status' | 'preview' | 'send', kind?, day?, salt? }.
+ * - par un admin connecté : { action: 'status' | 'preview' | 'send' | 'analyse-takes', kind?, day?, salt? }.
  *
  * Variables d'environnement (Vercel > Settings > Environment Variables) :
  *   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY  (déjà présentes)
@@ -14,8 +15,10 @@
  *   GEMINI_MODEL_PEN, GEMINI_MODEL_PARSE  (facultatif) pour changer de modèle sans toucher au code
  */
 import {
-  aiStoryPrompt, cleanStory, composeMessage, factsFrom, firstJson, optionsFrom, Payload, takePrompt, validateRule,
+  aiStoryPrompt, cleanStory, composeMessage, draftsToAnalyse, factsFrom, firstJson, oddsFor, optionsFrom, Payload, TakePlayer,
+  takePlayers, takePrompt, validateRule,
 } from '../src/lib/bot/server';
+import type { TakeRule } from '../src/lib/takes';
 import { ruleLabel } from '../src/lib/takes';
 import type { SlackMessage } from '../src/lib/bot/messages';
 
@@ -120,11 +123,70 @@ async function build(p: Payload, kind: string, salt?: string, revealedOnly = tru
   return m;
 }
 
+const UNCLEAR = 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.';
+
+type Parsed = { ok: true; rule: TakeRule; label: string } | { ok: false; reason: string; unavailable?: boolean };
+
+/** Traduit un Take en règle vérifiable. `unavailable` = l'IA n'a pas répondu (rien à reprocher au Take). */
+async function parseTake(text: string, author: string, list: TakePlayer[]): Promise<Parsed> {
+  if (!aiKey()) return { ok: false, unavailable: true, reason: "L'IA n'est pas encore branchée : ton Take sera arbitré à la main." };
+  const aliasMap = Object.fromEntries(list.map((p) => [p.name, [p.display, ...(p.aliases ?? [])]]));
+  try {
+    const { system, user } = takePrompt(text, author, list);
+    const out = firstJson(await ai(PARSE_CHAIN, system, user, 300, true)) as { ok?: boolean; rule?: unknown; reason?: string } | null;
+    if (!out?.ok) return { ok: false, reason: out?.reason ?? UNCLEAR };
+    const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
+    if (!rule) return { ok: false, reason: UNCLEAR };
+    const show = (n: string) => list.find((p) => p.name === n)?.display ?? n;
+    return { ok: true, rule, label: ruleLabel(rule, show) };
+  } catch {
+    return { ok: false, unavailable: true, reason: "L'IA ne répond pas pour le moment : ton Take sera arbitré à la main." };
+  }
+}
+
+/**
+ * Brouillons jamais validés : l'IA tranche à la place du pilote.
+ * Règle trouvée → validé ; Take hors sujet → refusé (un admin peut revenir dessus) ; IA muette → reste en brouillon (nouvel essai).
+ */
+async function analyseDrafts(p: Payload): Promise<{ validated: number; refused: number; left: number }> {
+  const secret = env('BOT_SECRET');
+  const list = takePlayers(p);
+  const res = { validated: 0, refused: 0, left: 0 };
+  for (const t of draftsToAnalyse(p)) {
+    const r = await parseTake(t.text, t.author, list);
+    if (!r.ok && r.unavailable) { res.left++; continue; }
+    const odds = r.ok ? oddsFor(p, r.rule) : null;
+    await rpc('bot_take_result', {
+      secret, p_id: t.id, p_validation: r.ok ? 'validated' : 'refused',
+      p_rule: r.ok ? r.rule : null, p_label: r.ok ? r.label : null,
+      p_probability: odds?.probability ?? null, p_points: odds?.points ?? null,
+      p_note: r.ok ? "Validé automatiquement par l'IA à la clôture" : `Refusé par l'IA à la clôture : ${r.reason}`,
+    });
+    if (r.ok) res.validated++; else res.refused++;
+  }
+  return res;
+}
+
+const draftSummary = (r: { validated: number; refused: number; left: number }) =>
+  `${r.validated} validé${r.validated > 1 ? 's' : ''}, ${r.refused} refusé${r.refused > 1 ? 's' : ''}${r.left ? `, ${r.left} en attente (IA muette)` : ''}`;
+
 /** Traite une entrée du journal : rédige, poste sur Slack, consigne le résultat. */
 async function processLog(logId: number): Promise<{ ok: boolean; body?: string; error?: string }> {
   const secret = env('BOT_SECRET');
   const p = await rpc<Payload>('bot_payload', { secret, p_log: logId });
   if (!p.log) return { ok: false, error: 'entrée inconnue' };
+  if (p.log.kind === 'takes') {
+    try {
+      const r = await analyseDrafts(p);
+      const body = `Analyse des brouillons : ${draftSummary(r)}`;
+      await rpc('bot_result', { secret, p_log: logId, p_status: r.left ? 'failed' : 'sent', p_body: body, p_error: r.left ? 'IA indisponible pour une partie des Takes' : null });
+      return { ok: !r.left, body };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      await rpc('bot_result', { secret, p_log: logId, p_status: 'failed', p_body: null, p_error: error }).catch(() => {});
+      return { ok: false, error };
+    }
+  }
   try {
     const m = await build(p, p.log.kind);
     if ('error' in m) {
@@ -163,7 +225,6 @@ export async function POST(req: Request): Promise<Response> {
   if (action === 'parse-take') {
     const text = String(body.text ?? '').trim().slice(0, 280);
     if (text.length < 3) return json({ ok: false, reason: 'Ton Take est vide.' });
-    if (!aiKey()) return json({ ok: false, unavailable: true, reason: "L'IA n'est pas encore branchée : ton Take sera arbitré à la main." });
     const sbHeaders = { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` };
     const [meRes, plRes] = await Promise.all([
       fetch(`${SB_URL()}/rest/v1/players?select=name&user_id=eq.${user.id}`, { headers: sbHeaders }),
@@ -171,20 +232,8 @@ export async function POST(req: Request): Promise<Response> {
     ]);
     const me = ((await meRes.json()) as { name: string }[])[0]?.name;
     if (!me) return json({ ok: false, reason: 'Seuls les pilotes peuvent poster un Take.' });
-    const players = ((await plRes.json()) as { name: string; display_name: string | null; active: boolean; aliases?: string[] | null }[]);
-    const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name, aliases: p.aliases ?? [] }));
-    const aliasMap = Object.fromEntries(list.map((p) => [p.name, [p.display, ...p.aliases]]));
-    try {
-      const { system, user: u } = takePrompt(text, me, list);
-      const out = firstJson(await ai(PARSE_CHAIN, system, u, 300, true)) as { ok?: boolean; rule?: unknown; label?: string; reason?: string } | null;
-      if (!out?.ok) return json({ ok: false, reason: out?.reason ?? 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
-      const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
-      if (!rule) return json({ ok: false, reason: 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
-      const show = (n: string) => list.find((p) => p.name === n)?.display ?? n;
-      return json({ ok: true, rule, label: ruleLabel(rule, show) });
-    } catch (e) {
-      return json({ ok: false, unavailable: true, reason: "L'IA ne répond pas pour le moment : ton Take sera arbitré à la main.", detail: String(e) });
-    }
+    const players = ((await plRes.json()) as { name: string; display_name: string | null; aliases?: string[] | null }[]);
+    return json(await parseTake(text, me, players.map((p) => ({ name: p.name, display: p.display_name || p.name, aliases: p.aliases ?? [] }))));
   }
 
   // Actions réservées aux admins
@@ -202,6 +251,13 @@ export async function POST(req: Request): Promise<Response> {
       catch (e) { aiError = String(e instanceof Error ? e.message : e).slice(0, 200); }
     }
     return json({ slack: !!env('SLACK_WEBHOOK_URL'), ai: aiOk, aiError, secret: secretOk });
+  }
+
+  // Lancer tout de suite l'analyse IA des brouillons du jour (sans attendre la clôture)
+  if (action === 'analyse-takes') {
+    const p = await rpc<Payload>('bot_payload', { secret: env('BOT_SECRET'), p_log: null, p_day: null });
+    const r = await analyseDrafts(p);
+    return json({ ok: true, ...r, text: draftSummary(r) });
   }
 
   const kind = String(body.kind ?? 'debrief');
