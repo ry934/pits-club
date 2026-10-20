@@ -138,7 +138,7 @@ export function Direct() {
                 <span className="live-name">
                   <b>{label(r.name)}</b>
                   <span className="live-meta">
-                    {r.races} courses · {r.wins} vict.
+                    <span className="nw">{r.races} courses</span> · <span className="nw">{r.wins} vict.</span>
                     {r.streak ? <em className={r.streak.kind === 'win' ? 'good' : 'bad'}>{r.streak.kind === 'win' ? ` · série ${r.streak.n}` : ` · ${r.streak.n}× 4e`}</em> : null}
                     <span className="live-cote"> · cote <Cote v={ratingAt(elo, r.name, day)} delta={ratingAt(elo, r.name, day) - ratingAt(elo, r.name, day, true)} /></span>
                   </span>
