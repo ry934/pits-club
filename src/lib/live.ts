@@ -73,3 +73,44 @@ export function nextRaceOdds(names: string[], elo: EloResult) {
   const tot = s.reduce((a, b) => a + b, 0);
   return names.map((name, i) => ({ name, p: s[i] / tot, rating: elo.rating.get(name) ?? 1500 })).sort((a, b) => b.p - a.p);
 }
+
+/** Un moment fort à célébrer à l'écran (et au son) en mode direct. */
+export type Moment = {
+  id: string; tone: 'gold' | 'red' | 'purple' | 'cyan'; sound: 'fanfare' | 'sad' | 'sparkle' | 'swoosh';
+  kicker: string; title: string; who: string; badge?: string;
+};
+
+const WIN_MILESTONES: Record<number, string> = { 3: 'Hat trick !', 5: 'Main pleine !', 7: 'Intouchable', 10: 'Dix sur la journée' };
+const LAST_MILESTONES: Record<number, string> = { 3: 'Lanterne rouge', 5: 'Abonné à la 4e place', 7: 'Record de générosité' };
+const ord = (n: number) => (n === 1 ? '1re' : `${n}e`);
+
+/**
+ * Les moments forts déclenchés par la dernière course de la journée : paliers de victoires et de 4e places,
+ * séries, changement de leader, exploit d'outsider. Les pilotes de `optout` ne sont jamais chambrés.
+ */
+export function raceMoments(dayRaces: Race[], elo: EloResult, label: (n: string) => string = (n) => n, optout: string[] = []): Moment[] {
+  const r = dayRaces.at(-1);
+  if (!r) return [];
+  const n = dayRaces.length;
+  const out: Moment[] = [];
+  const [w] = r.p, last = r.p[3];
+  const count = (name: string, pos: number) => dayRaces.filter((x) => x.p[pos] === name).length;
+  const run = (name: string, pos: number) => { let k = 0; for (let i = n - 1; i >= 0 && dayRaces[i].p[pos] === name; i--) k++; return k; };
+
+  const wr = run(w, 0), wc = count(w, 0);
+  if (wr >= 3) out.push({ id: `${r.id}-wrun`, tone: 'gold', sound: 'fanfare', who: w, kicker: wr === 3 ? 'Hat trick !' : 'Série en cours', title: `${label(w)} enchaîne ${wr} victoires d'affilée` });
+  else if (WIN_MILESTONES[wc]) out.push({ id: `${r.id}-wc`, tone: 'gold', sound: 'fanfare', who: w, kicker: WIN_MILESTONES[wc], title: `${ord(wc)} victoire du jour pour ${label(w)}` });
+
+  if (last && !optout.includes(last)) {
+    const lr = run(last, 3), lc = count(last, 3);
+    if (lr >= 3) out.push({ id: `${r.id}-lrun`, tone: 'red', sound: 'sad', who: last, kicker: 'La spirale', title: `${label(last)} : ${lr} fois 4e de suite` });
+    else if (LAST_MILESTONES[lc]) out.push({ id: `${r.id}-lc`, tone: 'red', sound: 'sad', who: last, kicker: LAST_MILESTONES[lc], title: `${ord(lc)} 4e place pour ${label(last)}` });
+  }
+
+  for (const e of liveFeed(dayRaces, elo, label)) {
+    if (e.n !== n) break;
+    if (e.kind === 'upset') out.push({ id: `${r.id}-upset`, tone: 'purple', sound: 'swoosh', who: e.who, kicker: 'Coup de théâtre', title: `${label(e.who)}, l'outsider, s'impose` });
+    if (e.kind === 'lead') out.push({ id: `${r.id}-lead`, tone: 'cyan', sound: 'swoosh', who: e.who, kicker: 'Changement en tête', title: `${label(e.who)} prend la tête de la session` });
+  }
+  return out;
+}
