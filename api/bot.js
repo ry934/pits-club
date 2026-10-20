@@ -638,7 +638,23 @@ async function currentUser(jwt) {
   return r.ok ? r.json() : null;
 }
 var aiKey = () => env("GEMINI_API_KEY") || env("GOOGLE_API_KEY") || (env("ANTHROPIC_API_KEY").startsWith("AIza") ? env("ANTHROPIC_API_KEY") : "");
-async function ai(model, system, user, maxTokens, asJson = false) {
+async function ai(models, system, user, maxTokens, asJson = false) {
+  const list = (Array.isArray(models) ? models : [models]).filter((m, i, a) => m && a.indexOf(m) === i);
+  let last;
+  for (const model of list) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await aiOnce(model, system, user, maxTokens, asJson);
+      } catch (e) {
+        last = e;
+        if (!/IA : (429|500|503)/.test(String(e))) break;
+        if (attempt === 0) await new Promise((res) => setTimeout(res, 1200));
+      }
+    }
+  }
+  throw last;
+}
+async function aiOnce(model, system, user, maxTokens, asJson) {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": aiKey(), "content-type": "application/json" },
@@ -649,7 +665,7 @@ async function ai(model, system, user, maxTokens, asJson = false) {
       generationConfig: { maxOutputTokens: Math.max(maxTokens * 4, 1024), ...asJson ? { responseMimeType: "application/json" } : {} }
     })
   });
-  if (!r.ok) throw new Error(`IA : ${r.status} ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) throw new Error(`IA : ${r.status} (${model}) ${(await r.text()).replace(/\s+/g, " ").slice(0, 200)}`);
   const data = await r.json();
   const c = data.candidates?.[0];
   const text = (c?.content?.parts ?? []).filter((x) => !x.thought && x.text).map((x) => x.text).join("").trim();
@@ -658,6 +674,8 @@ async function ai(model, system, user, maxTokens, asJson = false) {
 }
 var MODEL_PEN = env("GEMINI_MODEL_PEN") || "gemini-3.8-flash";
 var MODEL_PARSE = env("GEMINI_MODEL_PARSE") || "gemini-3.5-flash-lite";
+var PEN_CHAIN = [MODEL_PEN, "gemini-3.6-flash", MODEL_PARSE];
+var PARSE_CHAIN = [MODEL_PARSE, "gemini-3.1-flash-lite", "gemini-3.6-flash"];
 async function postSlack(m) {
   const url = env("SLACK_WEBHOOK_URL");
   if (!url) throw new Error("SLACK_WEBHOOK_URL manquant dans Vercel");
@@ -671,7 +689,7 @@ async function aiStory(p, kind, salt) {
   if (!f) return { aiError: "pas de donn\xE9es de session" };
   try {
     const { system, user } = aiStoryPrompt(f, optionsFrom(p, salt));
-    const raw = await ai(MODEL_PEN, system, user, 400);
+    const raw = await ai(PEN_CHAIN, system, user, 400);
     const story = cleanStory(raw);
     return story ? { story } : { aiError: `r\xE9cit hors format (${raw.length} caract\xE8res)` };
   } catch (e) {
@@ -736,7 +754,7 @@ async function POST(req) {
     const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name }));
     try {
       const { system, user: u } = takePrompt(text, me, list);
-      const out = firstJson(await ai(MODEL_PARSE, system, u, 300, true));
+      const out = firstJson(await ai(PARSE_CHAIN, system, u, 300, true));
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
       const rule = validateRule(out.rule, list.map((p) => p.name));
       if (!rule) return json({ ok: false, reason: "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
@@ -754,7 +772,7 @@ async function POST(req) {
     let aiError = aiKey() ? null : "cl\xE9 absente";
     if (aiKey()) {
       try {
-        await ai(MODEL_PARSE, "R\xE9ponds uniquement OK.", "Test", 5);
+        await ai(PARSE_CHAIN, "R\xE9ponds uniquement OK.", "Test", 5);
         aiOk = true;
       } catch (e) {
         aiError = String(e instanceof Error ? e.message : e).slice(0, 200);

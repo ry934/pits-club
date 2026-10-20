@@ -48,7 +48,24 @@ async function currentUser(jwt: string): Promise<{ id: string } | null> {
  */
 const aiKey = () => env('GEMINI_API_KEY') || env('GOOGLE_API_KEY') || (env('ANTHROPIC_API_KEY').startsWith('AIza') ? env('ANTHROPIC_API_KEY') : '');
 
-async function ai(model: string, system: string, user: string, maxTokens: number, asJson = false): Promise<string> {
+/** Appel Gemini avec une nouvelle tentative sur saturation passagère (429/500/503), puis repli sur les modèles suivants. */
+async function ai(models: string | string[], system: string, user: string, maxTokens: number, asJson = false): Promise<string> {
+  const list = (Array.isArray(models) ? models : [models]).filter((m, i, a) => m && a.indexOf(m) === i);
+  let last: unknown;
+  for (const model of list) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { return await aiOnce(model, system, user, maxTokens, asJson); }
+      catch (e) {
+        last = e;
+        if (!/IA : (429|500|503)/.test(String(e))) break; // erreur non passagère : modèle suivant
+        if (attempt === 0) await new Promise((res) => setTimeout(res, 1200));
+      }
+    }
+  }
+  throw last;
+}
+
+async function aiOnce(model: string, system: string, user: string, maxTokens: number, asJson: boolean): Promise<string> {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: { 'x-goog-api-key': aiKey(), 'content-type': 'application/json' },
@@ -59,7 +76,7 @@ async function ai(model: string, system: string, user: string, maxTokens: number
       generationConfig: { maxOutputTokens: Math.max(maxTokens * 4, 1024), ...(asJson ? { responseMimeType: 'application/json' } : {}) },
     }),
   });
-  if (!r.ok) throw new Error(`IA : ${r.status} ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) throw new Error(`IA : ${r.status} (${model}) ${(await r.text()).replace(/\s+/g, ' ').slice(0, 200)}`);
   const data = await r.json() as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[] };
   const c = data.candidates?.[0];
   const text = (c?.content?.parts ?? []).filter((x) => !x.thought && x.text).map((x) => x.text).join('').trim();
@@ -69,6 +86,9 @@ async function ai(model: string, system: string, user: string, maxTokens: number
 
 const MODEL_PEN = env('GEMINI_MODEL_PEN') || 'gemini-3.8-flash';
 const MODEL_PARSE = env('GEMINI_MODEL_PARSE') || 'gemini-3.5-flash-lite';
+/** Si un modèle est saturé, on bascule sur le suivant. */
+const PEN_CHAIN = [MODEL_PEN, 'gemini-3.6-flash', MODEL_PARSE];
+const PARSE_CHAIN = [MODEL_PARSE, 'gemini-3.1-flash-lite', 'gemini-3.6-flash'];
 
 async function postSlack(m: SlackMessage): Promise<void> {
   const url = env('SLACK_WEBHOOK_URL');
@@ -85,7 +105,7 @@ async function aiStory(p: Payload, kind: string, salt?: string): Promise<{ story
   if (!f) return { aiError: 'pas de données de session' };
   try {
     const { system, user } = aiStoryPrompt(f, optionsFrom(p, salt));
-    const raw = await ai(MODEL_PEN, system, user, 400);
+    const raw = await ai(PEN_CHAIN, system, user, 400);
     const story = cleanStory(raw);
     return story ? { story } : { aiError: `récit hors format (${raw.length} caractères)` };
   } catch (e) {
@@ -155,7 +175,7 @@ export async function POST(req: Request): Promise<Response> {
     const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name }));
     try {
       const { system, user: u } = takePrompt(text, me, list);
-      const out = firstJson(await ai(MODEL_PARSE, system, u, 300, true)) as { ok?: boolean; rule?: unknown; label?: string; reason?: string } | null;
+      const out = firstJson(await ai(PARSE_CHAIN, system, u, 300, true)) as { ok?: boolean; rule?: unknown; label?: string; reason?: string } | null;
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
       const rule = validateRule(out.rule, list.map((p) => p.name));
       if (!rule) return json({ ok: false, reason: 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
@@ -176,7 +196,7 @@ export async function POST(req: Request): Promise<Response> {
     let aiOk = false;
     let aiError: string | null = aiKey() ? null : 'clé absente';
     if (aiKey()) {
-      try { await ai(MODEL_PARSE, 'Réponds uniquement OK.', 'Test', 5); aiOk = true; }
+      try { await ai(PARSE_CHAIN, 'Réponds uniquement OK.', 'Test', 5); aiOk = true; }
       catch (e) { aiError = String(e instanceof Error ? e.message : e).slice(0, 200); }
     }
     return json({ slack: !!env('SLACK_WEBHOOK_URL'), ai: aiOk, aiError, secret: secretOk });
