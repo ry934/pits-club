@@ -40,7 +40,8 @@ export function Takes() {
 
 /** Version de démonstration (aperçu sans base) : Takes simulés. */
 function TakesDemo() {
-  const { byDay, dayList, elo, activeNames, closedDays } = useStore();
+  const { byDay, dayList, elo, activeNames, closedDays, player } = useStore();
+  const show = (n: string) => player(n).displayName ?? n;
   const lastDay = dayList.at(-1)!;
   const lastRaces = byDay.get(lastDay)!;
   const closed = sessionState(lastDay, lastRaces, closedDays) === 'closed';
@@ -141,11 +142,11 @@ function TakesDemo() {
                     )}
                   </div>
                 </>
-              ) : <p className="take-text" style={{ margin: 0 }}>« {mine.text || ruleLabel(mine.rule)} »</p>}
+              ) : <p className="take-text" style={{ margin: 0 }}>« {mine.text || ruleLabel(mine.rule, show)} »</p>}
 
               <div className="stack" style={{ gap: 6 }}>
                 <span className="label">Règle vérifiable</span>
-                <span className="take-rule">{valid ? ruleLabel(shownRule) : 'Choisis deux pilotes différents'}</span>
+                <span className="take-rule">{valid ? ruleLabel(shownRule, show) : 'Choisis deux pilotes différents'}</span>
                 <span className="hint">Au lot 2, l'IA proposera cette reformulation à partir de ta phrase ; tu la valideras avant envoi.</span>
               </div>
 
@@ -192,7 +193,7 @@ function TakesDemo() {
                   <div key={t.id} className={`take-card flip ${t.outcome}`} style={{ animationDelay: `${i * 0.18}s` }}>
                     <PlayerTag name={t.author} />
                     <span className="take-text">« {t.text} »</span>
-                    <span className="take-rule">{t.label}</span>
+                    <span className="take-rule">{t.rule ? ruleLabel(t.rule, show) : t.label}</span>
                     <div className="take-foot">
                       <span className="hint num">{Math.round(t.probability * 100)} % · {t.points} pts</span>
                       <span className={`outcome ${t.outcome}`}>{OUTCOME_LABEL[t.outcome]}{t.outcome === 'won' ? ` +${t.points}` : ''}</span>

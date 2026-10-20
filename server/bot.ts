@@ -180,7 +180,8 @@ export async function POST(req: Request): Promise<Response> {
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
       const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
       if (!rule) return json({ ok: false, reason: 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
-      return json({ ok: true, rule, label: ruleLabel(rule) });
+      const show = (n: string) => list.find((p) => p.name === n)?.display ?? n;
+      return json({ ok: true, rule, label: ruleLabel(rule, show) });
     } catch (e) {
       return json({ ok: false, unavailable: true, reason: "L'IA ne répond pas pour le moment : ton Take sera arbitré à la main.", detail: String(e) });
     }

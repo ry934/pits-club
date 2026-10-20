@@ -315,7 +315,7 @@ function Composer({ settings, logs, onSent }: { settings: AppSettings; logs: Log
 
 function TakesReview({ takes, onChange }: { takes: AdminTake[]; onChange: () => void }) {
   const { live } = useAuth();
-  const { byDay } = useStore();
+  const { byDay, player } = useStore();
   const [err, setErr] = useState<string | null>(null);
   const today = dayKey(new Date());
   const setStatus = async (id: string, status: string) => {
@@ -343,7 +343,7 @@ function TakesReview({ takes, onChange }: { takes: AdminTake[]; onChange: () => 
                     <tr key={t.id} className={auto === 'manual' && t.status === 'pending' ? 'needs-review' : ''}>
                       <td className="num">{fmtShort(t.day)}</td>
                       <td><PlayerTag name={t.author} size={24} /></td>
-                      <td><span className="take-text">« {t.text} »</span>{t.rule && <span className="take-rule" style={{ display: 'block' }}>{ruleLabel(t.rule)}</span>}</td>
+                      <td><span className="take-text">« {t.text} »</span>{t.rule && <span className="take-rule" style={{ display: 'block' }}>{ruleLabel(t.rule, (n) => player(n).displayName ?? n)}</span>}</td>
                       <td>{VERD[auto]}</td>
                       <td>
                         <select aria-label={`Verdict du Take de ${t.author}`} value={t.status} onChange={(e) => setStatus(t.id, e.target.value)}>

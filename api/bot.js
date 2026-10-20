@@ -120,22 +120,22 @@ var RULE_KINDS = [
   { kind: "win-streak", label: "S\xE9rie de victoires" },
   { kind: "volume", label: "Nombre de courses" }
 ];
-function ruleLabel(r) {
+function ruleLabel(r, L = (n) => n) {
   switch (r.kind) {
     case "duel":
-      return `${r.a} finit devant ${r.b}`;
+      return `${L(r.a)} finit devant ${L(r.b)}`;
     case "avg-better":
-      return `${r.p} fait mieux que ${fmtAvg(r.x)} de moyenne`;
+      return `${L(r.p)} fait mieux que ${fmtAvg(r.x)} de moyenne`;
     case "avg-worse":
-      return `${r.p} fait moins bien que ${fmtAvg(r.x)} de moyenne`;
+      return `${L(r.p)} fait moins bien que ${fmtAvg(r.x)} de moyenne`;
     case "wins-min":
-      return `${r.p} gagne au moins ${r.n} course${r.n > 1 ? "s" : ""}`;
+      return `${L(r.p)} gagne au moins ${r.n} course${r.n > 1 ? "s" : ""}`;
     case "no-win":
-      return `${r.p} ne gagne aucune course`;
+      return `${L(r.p)} ne gagne aucune course`;
     case "best-of-day":
-      return `${r.p} termine meilleur du jour`;
+      return `${L(r.p)} termine meilleur du jour`;
     case "win-streak":
-      return `${r.p} encha\xEEne ${r.n} victoires d'affil\xE9e`;
+      return `${L(r.p)} encha\xEEne ${r.n} victoires d'affil\xE9e`;
     case "volume":
       return `Au moins ${r.n} courses dans la session`;
   }
@@ -778,7 +778,8 @@ async function POST(req) {
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
       const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
       if (!rule) return json({ ok: false, reason: "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
-      return json({ ok: true, rule, label: ruleLabel(rule) });
+      const show = (n) => list.find((p) => p.name === n)?.display ?? n;
+      return json({ ok: true, rule, label: ruleLabel(rule, show) });
     } catch (e) {
       return json({ ok: false, unavailable: true, reason: "L'IA ne r\xE9pond pas pour le moment : ton Take sera arbitr\xE9 \xE0 la main.", detail: String(e) });
     }

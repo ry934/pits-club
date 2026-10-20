@@ -25,15 +25,16 @@ export const RULE_KINDS: { kind: TakeRule['kind']; label: string }[] = [
   { kind: 'volume', label: 'Nombre de courses' },
 ];
 
-export function ruleLabel(r: TakeRule): string {
+/** Phrase lisible de la règle ; `L` traduit un nom interne en pseudo affiché (par défaut, le nom tel quel). */
+export function ruleLabel(r: TakeRule, L: (name: string) => string = (n) => n): string {
   switch (r.kind) {
-    case 'duel': return `${r.a} finit devant ${r.b}`;
-    case 'avg-better': return `${r.p} fait mieux que ${fmtAvg(r.x)} de moyenne`;
-    case 'avg-worse': return `${r.p} fait moins bien que ${fmtAvg(r.x)} de moyenne`;
-    case 'wins-min': return `${r.p} gagne au moins ${r.n} course${r.n > 1 ? 's' : ''}`;
-    case 'no-win': return `${r.p} ne gagne aucune course`;
-    case 'best-of-day': return `${r.p} termine meilleur du jour`;
-    case 'win-streak': return `${r.p} enchaîne ${r.n} victoires d'affilée`;
+    case 'duel': return `${L(r.a)} finit devant ${L(r.b)}`;
+    case 'avg-better': return `${L(r.p)} fait mieux que ${fmtAvg(r.x)} de moyenne`;
+    case 'avg-worse': return `${L(r.p)} fait moins bien que ${fmtAvg(r.x)} de moyenne`;
+    case 'wins-min': return `${L(r.p)} gagne au moins ${r.n} course${r.n > 1 ? 's' : ''}`;
+    case 'no-win': return `${L(r.p)} ne gagne aucune course`;
+    case 'best-of-day': return `${L(r.p)} termine meilleur du jour`;
+    case 'win-streak': return `${L(r.p)} enchaîne ${r.n} victoires d'affilée`;
     case 'volume': return `Au moins ${r.n} courses dans la session`;
   }
 }
