@@ -249,8 +249,6 @@ function Classement() {
         </label>,
       )}
 
-      <AvgRace rows={shown} who="" onPick={pick} />
-
       <Section title={`Classement · ${eff.label}`}>
         {shown.length === 0 ? <Empty>Aucune course sur cette période.</Empty> : (
           <div className="table-wrap">
@@ -259,8 +257,8 @@ function Classement() {
                 <tr>
                   <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th>
                   <th className="r" title="Cote Elo en fin de période, et son évolution sur la période">Cote</th><th className="r">Courses</th>
-                  <th className="r">Vict.</th><th className="r hide-sm">Podium</th>
-                  <th className="hide-sm" title={`${TREND_RECENT} dernières courses comparées aux ${TREND_BEFORE} précédentes, à la fin de la période`}><button type="button" className="th-help" onClick={(e) => { e.stopPropagation(); openLexique('tendance'); }}>Tendance <span aria-hidden="true">?</span></button></th><th className="hide-sm">Places</th>
+                  <th className="r hide-sm">Podium</th>
+                  <th className="hide-sm" title={`${TREND_RECENT} dernières courses comparées aux ${TREND_BEFORE} précédentes, à la fin de la période`}><button type="button" className="th-help" onClick={(e) => { e.stopPropagation(); openLexique('tendance'); }}>Tendance <span aria-hidden="true">?</span></button></th>{[1, 2, 3, 4].map((k) => <th key={k} className="r pl-h hide-sm" title={`Part des courses terminées ${k === 1 ? '1er' : `${k}e`}`}><Pos n={k} /></th>)}
                 </tr>
               </thead>
               <tbody>
@@ -272,10 +270,9 @@ function Classement() {
                     <td className="r"><b><Avg v={r.avg} /></b></td>
                     <td className="r"><Cote v={ratingAt(elo, r.name, endDay)} delta={startDay ? ratingAt(elo, r.name, endDay) - ratingAt(elo, r.name, startDay, true) : undefined} /></td>
                     <td className="r num">{r.races}</td>
-                    <td className="r num good">{Math.round((r.wins / r.races) * 100)} %</td>
                     <td className="r num hide-sm">{Math.round(((r.places[0] + r.places[1] + r.places[2]) / r.races) * 100)} %</td>
                     <td className="hide-sm"><TrendBadge t={trendOf(r.name, races, endDay)} /></td>
-                    <td className="hide-sm" style={{ minWidth: 100 }}><PlacesBar places={r.places} total={r.races} /></td>
+                    {r.places.map((n, k) => <td key={k} className={`r num hide-sm pl-pct pl-pct-${k + 1}`}>{Math.round((n / r.races) * 100)} %</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -283,6 +280,8 @@ function Classement() {
           </div>
         )}
       </Section>
+      <AvgRace rows={shown} who="" onPick={pick} />
+
       <p className="hint">Tri : moyenne, puis victoires, puis courses. Clique sur un pilote pour ouvrir sa fiche.{prev ? ` ▲▼ : évolution de place par rapport à ${prev.label}.` : ''} <a className="link" href="#lexique" onClick={(e) => { e.preventDefault(); openLexique(); }}>Comment lire ces chiffres</a></p>
 
       <Lexique />

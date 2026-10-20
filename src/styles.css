@@ -972,3 +972,5 @@ tr.is-banned td:last-child { opacity: 1; }
 @keyframes timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .celeb-rain, .celeb-rays { display: none; } .celeb-card, .celeb-kicker, .celeb-emblem svg { animation: none; } }
 @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+.pl-pct { white-space: nowrap; }
+.pl-pct-1 { color: var(--p1); } .pl-pct-4 { color: var(--p4); }

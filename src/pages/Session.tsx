@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { LapChart } from '../components/charts';
 import { Avatar, Avg, Cote, CountUp, Empty, Panel, PlacesBar, PlayerTag, Pos, Section, Stat } from '../components/ui';
 import { Emblem } from '../components/Emblem';
 import { BADGE } from '../lib/badges';
@@ -40,10 +39,7 @@ export function Session({ day: dayParam, afterTable }: { day?: string; afterTabl
         {next ? <a className="iconbtn" href={href('stats', 'session', next)} aria-label="Session suivante">›</a> : <span className="iconbtn off">›</span>}
       </header>
       {!isToday && dayList.includes(today) && <div><a className="btn btn-sm" href={href('stats', 'session', today)}>Revenir à la session du jour</a></div>}
-      <div className="btn-row">
-        {day === dayList.at(-1) && <a className={`btn ${state === 'live' ? 'btn-primary' : ''} live-link`} href="#/direct">Mode direct</a>}
-        {state === 'live' && <CloseSessionButton day={day} />}
-      </div>
+      {state === 'live' && <div className="btn-row"><CloseSessionButton day={day} /></div>}
 
       <div className="kpis">
         <Panel><Stat label="Courses" value={<CountUp value={s.races.length} />} /></Panel>
@@ -64,10 +60,6 @@ export function Session({ day: dayParam, afterTable }: { day?: string; afterTabl
           </a>
         ))}
       </div>
-
-      <Panel hud="cyan" title="Race history · course par course" aside={<span className="hint">survole une course pour le détail</span>}>
-        <LapChart races={s.races} />
-      </Panel>
 
       <Section title={isToday ? "Classement du jour" : "Classement de la session"} aside={<span className="hint">nombre de fois à chaque place</span>}>
         <div className="table-wrap">
