@@ -21,7 +21,7 @@ function mondayOf(d: Date) {
   return x;
 }
 
-export function Heatmap({ me }: { me: string | null }) {
+export function Heatmap({ me, selected, title = 'Activité du paddock', hint }: { me: string | null; selected?: string; title?: string; hint?: string }) {
   const { byDay, dayList, player } = useStore();
   const years = useMemo(() => [...new Set(dayList.map((d) => d.slice(0, 4)))].reverse(), [dayList]);
   const [range, setRange] = useState<string>('12m');
@@ -101,7 +101,7 @@ export function Heatmap({ me }: { me: string | null }) {
   };
 
   return (
-    <Panel hud="cyan" title="Activité du paddock" className="heat-panel" aside={
+    <Panel hud="cyan" title={title} className="heat-panel" aside={
       <div className="heat-controls">
         {me && (
           <div className="seg seg-sm" role="group" aria-label="Courses comptées">
@@ -121,7 +121,7 @@ export function Heatmap({ me }: { me: string | null }) {
             <span />
             {monthLabels.map((m, i) => <span key={i} className="heat-month">{m}</span>)}
             {DAYS.map((d, row) => (
-              <FragmentRow key={d} label={row % 2 === 0 ? d : ''} cells={weeks.map((w) => w[row])} level={level} todayKey={todayKey} onShow={show} onHide={() => setTip(null)} />
+              <FragmentRow key={d} label={row % 2 === 0 ? d : ''} cells={weeks.map((w) => w[row])} level={level} todayKey={todayKey} selected={selected} onShow={show} onHide={() => setTip(null)} />
             ))}
           </div>
         </div>
@@ -132,6 +132,7 @@ export function Heatmap({ me }: { me: string | null }) {
             {tip.cell.info && <span className="heat-tip-info">{tip.cell.info}</span>}
           </div>
         )}
+        {hint && <span className="hint">{hint}</span>}
         <div className="heat-foot">
           <span className="heat-sum">
             <b className="num">{total}</b> courses · <b className="num">{played}</b> jours joués
@@ -146,8 +147,8 @@ export function Heatmap({ me }: { me: string | null }) {
   );
 }
 
-function FragmentRow({ label, cells, level, todayKey, onShow, onHide }: {
-  label: string; cells: Cell[]; level: (n: number) => number; todayKey: string;
+function FragmentRow({ label, cells, level, todayKey, selected, onShow, onHide }: {
+  label: string; cells: Cell[]; level: (n: number) => number; todayKey: string; selected?: string;
   onShow: (c: Cell, el: HTMLElement) => void; onHide: () => void;
 }) {
   return (
@@ -155,11 +156,11 @@ function FragmentRow({ label, cells, level, todayKey, onShow, onHide }: {
       <span className="heat-day">{label}</span>
       {cells.map((c) => {
         if (c.count < 0) return <span key={c.day} className="heat-cell void" aria-hidden="true" />;
-        const cls = `heat-cell l${c.future ? 'f' : level(c.count)} ${c.day === todayKey ? 'today' : ''}`;
+        const cls = `heat-cell l${c.future ? 'f' : level(c.count)} ${c.day === todayKey ? 'today' : ''} ${c.day === selected ? 'sel' : ''}`;
         const label = `${LONG.format(parseLocal(c.day))} : ${c.count > 0 ? `${c.count} courses` : 'pas de course'}`;
         const events = { onMouseEnter: (e: React.MouseEvent<HTMLElement>) => onShow(c, e.currentTarget), onFocus: (e: React.FocusEvent<HTMLElement>) => onShow(c, e.currentTarget), onBlur: onHide };
         return c.count > 0
-          ? <a key={c.day} className={cls} href={href('session', c.day)} aria-label={label} {...events} />
+          ? <a key={c.day} className={cls} href={href('stats', 'session', c.day)} aria-label={label} {...events} />
           : <span key={c.day} className={cls} aria-label={label} {...events} />;
       })}
     </>

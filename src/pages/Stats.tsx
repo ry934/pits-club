@@ -1,52 +1,65 @@
 import { CSSProperties, useEffect, useMemo, useState } from 'react';
 import { AvgBars, TrendChart } from '../components/charts';
+import { Emblem } from '../components/Emblem';
+import { Heatmap } from '../components/Heatmap';
+import { BADGES, Holding } from '../lib/badges';
+import { Session } from './Session';
+import { Rivalites } from './Rivalites';
 import { Avg, Avatar, Cote, Delta, Empty, Panel, PlacesBar, PlayerTag, Pos, Section, Stat } from '../components/ui';
 import { useAuth } from '../auth';
 import { H2HRow, playerSheet, PlayerSheet, Trend, TREND_BEFORE, TREND_RECENT, trendOf } from '../lib/sheet';
 import { useStore } from '../store';
 import {
   dayKey, fmtAvg, fmtDay, fmtDuration, fmtMonth, fmtShort, monthKey, parseLocal, Period, PERIOD_LABELS, PeriodKind,
-  periodOf, previousPeriod, nextPeriod, rankedWithEvolution, ratingAt, records, Run, standings, fmtTime, WEEKDAYS,
+  periodOf, playerProfile, previousPeriod, nextPeriod, rankedWithEvolution, ratingAt, records, Run, standings, fmtTime, WEEKDAYS,
 } from '../lib/stats';
 import { Race } from '../lib/types';
 import { href } from '../router';
 
-type Tab = 'classement' | 'tendances' | 'records' | 'sessions';
+type Tab = 'classement' | 'pilote' | 'session' | 'duels' | 'records';
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'classement', label: 'Championship' }, { key: 'tendances', label: 'Tendances' },
-  { key: 'records', label: 'Records' }, { key: 'sessions', label: 'Sessions' },
+  { key: 'classement', label: 'Classement' }, { key: 'pilote', label: 'Pilote' }, { key: 'session', label: 'Session' },
+  { key: 'duels', label: 'Duels' }, { key: 'records', label: 'Records' },
 ];
-
-const SIZES = [{ k: 'all', l: 'Toutes' }, { k: '4', l: '4 pilotes' }, { k: '5', l: '5' }, { k: '6', l: '6' }, { k: '7', l: '7 et +' }];
-
-function useSessionSizes() {
-  const { byDay } = useStore();
-  return useMemo(() => new Map([...byDay].map(([d, rs]) => [d, new Set(rs.flatMap((r) => r.p)).size])), [byDay]);
-}
-const sizeOk = (size: number, f: string) => f === 'all' || (f === '7' ? size >= 7 : size === Number(f));
+/** Anciens onglets, pour que les vieux liens tombent au bon endroit. */
+const OLD_TABS: Record<string, Tab> = { sessions: 'session', tendances: 'classement', rivalites: 'duels' };
 
 function readPref<T>(k: string, d: T): T { try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } }
 function writePref(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* indisponible */ } }
 
-
-export function Stats({ tab: tabParam }: { tab?: string }) {
-  const tab = (TABS.find((t) => t.key === tabParam)?.key ?? 'classement') as Tab;
+export function Stats({ tab: tabParam, arg, arg2 }: { tab?: string; arg?: string; arg2?: string }) {
+  const tab = (TABS.find((t) => t.key === tabParam)?.key ?? OLD_TABS[tabParam ?? ''] ?? 'classement') as Tab;
+  const { me } = useAuth();
+  const { dayList } = useStore();
+  const tabHref = (t: Tab) => t === 'pilote' ? href('stats', 'pilote', ...(tab === 'pilote' && arg ? [arg] : me ? [me] : []))
+    : t === 'session' ? href('stats', 'session', ...(dayList.includes(dayKey(new Date())) ? [dayKey(new Date())] : [])) : href('stats', t);
   return (
     <div className="page">
       <header className="page-head">
         <h1>Statistiques</h1>
-        <div className="tabs-line" role="tablist">
+        <nav className="tabs-line" aria-label="Rubriques des statistiques">
           {TABS.map((t) => (
-            <button key={t.key} role="tab" aria-selected={t.key === tab} className={t.key === tab ? 'on' : ''}
-              onClick={() => { window.location.hash = `#/stats/${t.key}`; }}>{t.label}</button>
+            <a key={t.key} href={tabHref(t.key)} aria-current={t.key === tab ? 'page' : undefined} className={t.key === tab ? 'on' : ''}>{t.label}</a>
           ))}
-        </div>
+        </nav>
       </header>
       {tab === 'classement' && <Classement />}
-      {tab === 'tendances' && <Tendances />}
+      {tab === 'pilote' && <PiloteTab name={arg} key={arg ?? ''} />}
+      {tab === 'session' && <SessionTab day={arg} />}
+      {tab === 'duels' && <Rivalites a={arg} b={arg2} />}
       {tab === 'records' && <Records />}
-      {tab === 'sessions' && <Sessions />}
     </div>
+  );
+}
+
+function SessionTab({ day }: { day?: string }) {
+  const { me } = useAuth();
+  const { byDay, dayList } = useStore();
+  const shown = day && byDay.has(day) ? day : dayList.at(-1);
+  return (
+    <>
+      <Session day={day} afterTable={<Heatmap me={me} selected={shown} title="Retrouver une session" hint="Clique sur un jour pour ouvrir sa session. Le jour affiché est cerclé de blanc." />} />
+    </>
   );
 }
 
@@ -171,84 +184,72 @@ function Lexique() {
   );
 }
 
-function Classement() {
-  const { races, dayList, player, elo, activeNames, lastSeen } = useStore();
-  const { me } = useAuth();
-  const [kind, setKindRaw] = useState<PeriodKind | 'custom'>(() => readPref('mk.period', 'month'));
-  const [period, setPeriod] = useState<Period>(() => periodOf(kind === 'custom' ? 'month' : kind, dayList.at(-1)!));
-  const [from, setFrom] = useState(() => dayKey(new Date(parseLocal(dayList.at(-1)!).getTime() - 30 * 864e5)));
-  const [to, setTo] = useState(dayList.at(-1)!);
-  const [activeOnly, setActiveOnly] = useState<boolean>(() => readPref('mk.activeOnly', true));
-  const [who, setWho] = useState<string>(() => me ?? activeNames[0] ?? '');
-  const setKind = (k: PeriodKind | 'custom') => {
-    setKindRaw(k); writePref('mk.period', k);
-    if (k !== 'custom') setPeriod(periodOf(k, dayList.at(-1)!));
-  };
+type Kind = PeriodKind | 'custom';
+const KINDS: PeriodKind[] = ['day', 'week', 'month', 'year', 'all'];
+
+/** Filtre de période commun au classement et à la fiche pilote (le choix est mémorisé). */
+function usePeriod() {
+  const { races, dayList } = useStore();
+  const last = dayList.at(-1)!;
+  const [kind, setKindRaw] = useState<Kind>(() => { const k = readPref<Kind>('mk.period', 'month'); return k === 'custom' || KINDS.includes(k as PeriodKind) ? k : 'month'; });
+  const [period, setPeriod] = useState<Period>(() => periodOf(kind === 'custom' ? 'month' : kind, last));
+  const [from, setFrom] = useState(() => dayKey(new Date(parseLocal(last).getTime() - 30 * 864e5)));
+  const [to, setTo] = useState(last);
+  const setKind = (k: Kind) => { setKindRaw(k); writePref('mk.period', k); if (k !== 'custom') setPeriod(periodOf(k, last)); };
   const eff: Period = kind === 'custom' ? { kind: 'all', start: from, end: to + '~', label: `Du ${fmtShort(from)} au ${fmtShort(to)}`, key: from + to } : period;
   const prev = kind === 'custom' ? null : previousPeriod(period, dayList);
   const next = kind === 'custom' ? null : nextPeriod(period, dayList);
-  const filter = (p: Period | null) => p ? races.filter((r) => r.day >= p.start && r.day < p.end) : [];
+  const filter = (p: Period | null) => (p ? races.filter((r) => r.day >= p.start && r.day < p.end) : []);
   const cur = useMemo(() => filter(eff), [races, eff.key]);
-  const endDay = cur.at(-1)?.day;
+  const prevRaces = useMemo(() => (prev ? filter(prev) : null), [races, prev?.key]);
   const startDay = eff.kind === 'all' && kind !== 'custom' ? undefined : eff.start;
-  const rows = useMemo(() => rankedWithEvolution(standings(cur), prev ? standings(filter(prev)) : null), [cur, prev?.key]);
+  const bar = (extra?: React.ReactNode) => (
+    <Panel>
+      <div className="stack">
+        <div className="seg" role="tablist" aria-label="Période">
+          {KINDS.map((k) => <button key={k} className={k === kind ? 'on' : ''} onClick={() => setKind(k)}>{PERIOD_LABELS[k]}</button>)}
+          <button className={kind === 'custom' ? 'on' : ''} onClick={() => setKind('custom')}>Dates</button>
+        </div>
+        <div className="filters">
+          {kind === 'custom' ? (
+            <>
+              <label className="field"><span>Du</span><input id="from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
+              <label className="field"><span>Au</span><input id="to" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
+            </>
+          ) : kind === 'all' ? null : (
+            <div className="session-head" style={{ minWidth: 240 }}>
+              <button className="iconbtn" disabled={!prev} onClick={() => prev && setPeriod(prev)} aria-label="Période précédente">‹</button>
+              <div className="grow" style={{ alignItems: 'center' }}><b style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', textTransform: 'capitalize', textAlign: 'center' }}>{period.label}</b></div>
+              <button className="iconbtn" disabled={!next} onClick={() => next && setPeriod(next)} aria-label="Période suivante">›</button>
+            </div>
+          )}
+          {extra}
+        </div>
+        <span className="hint">{cur.length} courses sur la période{kind === 'all' ? ' (depuis le début)' : ''}</span>
+      </div>
+    </Panel>
+  );
+  return { eff, prev, cur, prevRaces, endDay: cur.at(-1)?.day, startDay, bar };
+}
+
+function Classement() {
+  const { races, player, elo } = useStore();
+  const { eff, prev, cur, prevRaces, endDay, startDay, bar } = usePeriod();
+  const [activeOnly, setActiveOnly] = useState<boolean>(() => readPref('mk.activeOnly', true));
+  const rows = useMemo(() => rankedWithEvolution(standings(cur), prevRaces ? standings(prevRaces) : null), [cur, prevRaces]);
   const shown = rows.filter((r) => (!activeOnly || player(r.name).active) && r.name !== 'Other');
-  const sheet = useMemo(() => (who ? playerSheet(who, cur, races, elo, startDay) : null), [who, cur, races, elo, startDay]);
-  const others = [...lastSeen.keys()].filter((n) => n !== 'Other' && !activeNames.includes(n)).sort();
-  const pick = (n: string) => { setWho(n); document.getElementById('fiche')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  const pick = (n: string) => { window.location.hash = href('stats', 'pilote', n); };
 
   return (
     <>
-      <Panel>
-        <div className="stack">
-          <div className="seg" role="tablist" aria-label="Période">
-            {(['day', 'month', 'quarter', 'semester', 'year', 'all'] as PeriodKind[]).map((k) => (
-              <button key={k} className={k === kind ? 'on' : ''} onClick={() => setKind(k)}>{PERIOD_LABELS[k]}</button>
-            ))}
-            <button className={kind === 'custom' ? 'on' : ''} onClick={() => setKind('custom')}>Dates</button>
-          </div>
-          <div className="filters">
-            {kind === 'custom' ? (
-              <>
-                <label className="field"><span>Du</span><input id="from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
-                <label className="field"><span>Au</span><input id="to" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
-              </>
-            ) : (
-              <div className="session-head" style={{ minWidth: 240 }}>
-                <button className="iconbtn" disabled={!prev} onClick={() => prev && setPeriod(prev)} aria-label="Période précédente">‹</button>
-                <div className="grow" style={{ alignItems: 'center' }}><b style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', textTransform: 'capitalize' }}>{period.label}</b></div>
-                <button className="iconbtn" disabled={!next} onClick={() => next && setPeriod(next)} aria-label="Période suivante">›</button>
-              </div>
-            )}
-            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 }}>
-              <input id="active-only" type="checkbox" checked={activeOnly} onChange={(e) => { setActiveOnly(e.target.checked); writePref('mk.activeOnly', e.target.checked); }} style={{ accentColor: 'var(--cyan)', width: 18, height: 18 }} />
-              <span style={{ letterSpacing: '0.08em' }}>Actifs uniquement</span>
-            </label>
-          </div>
-          <span className="hint">{cur.length} courses sur la période</span>
-        </div>
-      </Panel>
-
-      <div className="picker" role="radiogroup" aria-label="Pilote affiché" id="fiche">
-        {activeNames.map((n) => (
-          <button key={n} type="button" role="radio" aria-checked={who === n} className={`picker-chip ${who === n ? 'on' : ''}`} onClick={() => setWho(n)}>
-            <Avatar name={n} size={26} /><span>{player(n).displayName ?? n}</span>{n === me && <small>moi</small>}
-          </button>
-        ))}
-        {others.length > 0 && (
-          <select aria-label="Ancien pilote" value={others.includes(who) ? who : ''} onChange={(e) => e.target.value && setWho(e.target.value)}>
-            <option value="">Anciens pilotes…</option>
-            {others.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-        )}
-        {me && who !== me && <button type="button" className="btn btn-sm" onClick={() => setWho(me)}>Revenir à moi</button>}
-      </div>
-
-      {sheet ? <SheetView s={sheet} periodLabel={eff.label} trend={trendOf(who, races, endDay)} /> : (
-        <Panel><p className="muted" style={{ margin: 0 }}>{player(who).displayName ?? who} n'a pas couru sur cette période. Choisis une autre période ou un autre pilote.</p></Panel>
+      {bar(
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 }}>
+          <input id="active-only" type="checkbox" checked={activeOnly} onChange={(e) => { setActiveOnly(e.target.checked); writePref('mk.activeOnly', e.target.checked); }} style={{ accentColor: 'var(--cyan)', width: 18, height: 18 }} />
+          <span style={{ letterSpacing: '0.08em' }}>Actifs uniquement</span>
+        </label>,
       )}
 
-      <AvgRace rows={shown} who={who} onPick={pick} />
+      <AvgRace rows={shown} who="" onPick={pick} />
 
       <Section title={`Classement · ${eff.label}`}>
         {shown.length === 0 ? <Empty>Aucune course sur cette période.</Empty> : (
@@ -264,7 +265,7 @@ function Classement() {
               </thead>
               <tbody>
                 {shown.map((r, i) => (
-                  <tr key={r.name} className={r.name === who ? 'row-selected' : ''} onClick={() => pick(r.name)} style={{ cursor: 'pointer' }}>
+                  <tr key={r.name} onClick={() => pick(r.name)} style={{ cursor: 'pointer' }}>
                     <td className="rank">{i + 1}</td>
                     <td className="hide-sm"><Delta delta={r.delta} isNew={r.isNew} /></td>
                     <td><PlayerTag name={r.name} link={false} sub={player(r.name).active ? undefined : 'ancien'} /></td>
@@ -282,7 +283,47 @@ function Classement() {
           </div>
         )}
       </Section>
-      <p className="hint">Tri : moyenne, puis victoires, puis courses. Clique sur un pilote pour afficher sa fiche.{prev ? ` ▲▼ : évolution de place par rapport à ${prev.label}.` : ''} <a className="link" href="#lexique" onClick={(e) => { e.preventDefault(); openLexique(); }}>Comment lire ces chiffres</a></p>
+      <p className="hint">Tri : moyenne, puis victoires, puis courses. Clique sur un pilote pour ouvrir sa fiche.{prev ? ` ▲▼ : évolution de place par rapport à ${prev.label}.` : ''} <a className="link" href="#lexique" onClick={(e) => { e.preventDefault(); openLexique(); }}>Comment lire ces chiffres</a></p>
+
+      <Lexique />
+    </>
+  );
+}
+
+function PiloteTab({ name }: { name?: string }) {
+  const { races, elo, runs, days, activeNames, lastSeen, player, badges } = useStore();
+  const { me } = useAuth();
+  const known = (n?: string) => !!n && (activeNames.includes(n) || lastSeen.has(n));
+  const who = known(name) ? name! : me ?? activeNames[0] ?? '';
+  const go = (n: string) => { window.location.hash = href('stats', 'pilote', n); };
+  const { eff, cur, endDay, startDay, bar } = usePeriod();
+  const sheet = useMemo(() => (who ? playerSheet(who, cur, races, elo, startDay) : null), [who, cur, races, elo, startDay]);
+  const prof = useMemo(() => playerProfile(who, races, elo, runs, days, activeNames), [who, races, elo, runs, days, activeNames]);
+  const others = [...lastSeen.keys()].filter((n) => n !== 'Other' && !activeNames.includes(n)).sort();
+  const held = badges.held.get(who);
+
+  return (
+    <>
+      <div className="picker" role="radiogroup" aria-label="Pilote affiché">
+        {activeNames.map((n) => (
+          <button key={n} type="button" role="radio" aria-checked={who === n} className={`picker-chip ${who === n ? 'on' : ''}`} onClick={() => go(n)}>
+            <Avatar name={n} size={26} /><span>{player(n).displayName ?? n}</span>{n === me && <small>moi</small>}
+          </button>
+        ))}
+        {others.length > 0 && (
+          <select aria-label="Ancien pilote" value={others.includes(who) ? who : ''} onChange={(e) => e.target.value && go(e.target.value)}>
+            <option value="">Anciens pilotes…</option>
+            {others.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
+        {me && who !== me && <button type="button" className="btn btn-sm" onClick={() => go(me)}>Revenir à moi</button>}
+      </div>
+
+      {bar()}
+
+      {sheet ? <SheetView s={sheet} periodLabel={eff.label} trend={trendOf(who, races, endDay)} prof={prof} held={held} /> : (
+        <Panel><p className="muted" style={{ margin: 0 }}>{player(who).displayName ?? who} n'a pas couru sur cette période. Choisis une autre période ou un autre pilote.</p></Panel>
+      )}
 
       <Lexique />
     </>
@@ -292,11 +333,11 @@ function Classement() {
 const pctTxt = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')} %`;
 const VERDICT: Record<H2HRow['verdict'], string> = { nemesis: 'Némésis', victim: 'Victime', ahead: 'Devant', behind: 'Derrière', even: 'Équilibré' };
 
-function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: string; trend: Trend | null }) {
+function SheetView({ s, periodLabel, trend, prof, held }: { s: PlayerSheet; periodLabel: string; trend: Trend | null; prof: ReturnType<typeof playerProfile>; held?: Map<string, Holding> }) {
   const { player } = useStore();
   const p = player(s.name);
   const maxPlace = Math.max(...s.st.places);
-  const monthly = s.monthly;
+  const rating = prof.ratingHistory.slice(-60);
   return (
     <div className="sheet">
       <div className="chamfer-frame">
@@ -306,8 +347,8 @@ function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: str
             <span className="label">Fiche pilote · <span style={{ textTransform: 'capitalize' }}>{periodLabel}</span></span>
             <h2>{p.displayName ?? s.name}</h2>
             <span className="muted">{s.races} courses sur {s.days} jour{s.days > 1 ? 's' : ''} de jeu · {s.rank}e sur {s.field}</span>
+            {prof.all && <span className="hint">{p.active ? 'Pilote actif' : 'Ancien pilote'} depuis le {fmtShort(prof.firstDay)} · {prof.all.races} courses au total · ≈ {fmtDuration(prof.minutes)} de jeu</span>}
           </div>
-          <a className="btn btn-sm" href={href('pilote', s.name)}>Fiche complète</a>
         </header>
       </div>
 
@@ -321,6 +362,20 @@ function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: str
           <Stat label="Tendance actuelle" value={<TrendBadge t={trend} />} sub={trend ? `${fmtAvg(trend.recent)} sur ${TREND_RECENT} courses vs ${fmtAvg(trend.before)} avant` : 'pas assez de courses'} />
         </Panel>
       </div>
+
+      {held && held.size > 0 && (
+        <Section title={`Trophées · ${held.size}`} aside={<a className="link" href="#/trophees">Galerie</a>}>
+          <div className="badge-strip">
+            {BADGES.filter((b) => held.has(b.id)).map((b) => (
+              <a key={b.id} href="#/trophees" title={`${b.condition} Débloqué le ${fmtShort(held.get(b.id)!.first)}.`}>
+                <Emblem badge={b} size={54} />
+                <b style={{ color: 'var(--white)' }}>{b.name}</b>
+                <span>×{held.get(b.id)!.count}</span>
+              </a>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <div className="grid grid-2">
         <Panel title="Répartition des places">
@@ -356,7 +411,7 @@ function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: str
         <div className="form-strip">
           <span className="hint">ancien</span>
           {s.recent.map(({ race, pos }) => (
-            <a key={race.id} href={href('session', race.day)} className={`form-cell pl-${pos}`} title={`${fmtShort(race.day)} · ${fmtTime(race.ts)}`}>
+            <a key={race.id} href={href('stats', 'session', race.day)} className={`form-cell pl-${pos}`} title={`${fmtShort(race.day)} · ${fmtTime(race.ts)}`}>
               <b>{pos}</b><small>{fmtShort(race.day).replace(/\s\d{4}$/, '')}</small>
             </a>
           ))}
@@ -370,11 +425,12 @@ function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: str
             <AvgBars rows={s.weekdays.filter((w) => w.races && w.avg !== null).map((w) => ({ label: WEEKDAYS[w.day], avg: w.avg!, n: w.races }))} />
           ) : <Empty>Aucune course.</Empty>}
         </Panel>
-        <Panel hud="cyan" title="Évolution mensuelle · 12 mois" aside={<span className="hint">plus haut = meilleur</span>}>
-          <TrendChart labels={monthly.map((m) => fmtMonth(m.month, true))} best height={200}
-            series={[{ name: s.name, color: p.color, values: monthly.map((m) => m.avg), counts: monthly.map((m) => m.races) }]}
-            min={1} max={4} invert ticks={[1, 2, 3, 4]} format={(v) => (Number.isInteger(v) ? String(v) : fmtAvg(v))} />
-        </Panel>
+        {rating.length > 2 ? (
+          <Panel hud="cyan" title="Évolution de la cote" aside={<span className="hint">{rating.length} dernières sessions jouées · all time</span>}>
+            <TrendChart labels={rating.map((r) => fmtShort(r.day))} best height={200}
+              series={[{ name: 'Cote', color: p.color, values: rating.map((r) => r.rating) }]} format={(v) => String(Math.round(v))} />
+          </Panel>
+        ) : <Panel title="Évolution de la cote"><Empty>Pas encore assez de sessions.</Empty></Panel>}
       </div>
 
       <Panel title={`Face-à-face · ${p.displayName ?? s.name} contre chaque adversaire`} aside={<span className="hint">Némésis et victime : 10 courses communes minimum</span>}>
@@ -391,7 +447,7 @@ function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: str
               <tbody>
                 {[...s.h2h].reverse().map((r) => (
                   <tr key={r.opp}>
-                    <td><a href={href('rivalites', s.name, r.opp)}><PlayerTag name={r.opp} link={false} size={24} /></a></td>
+                    <td><a href={href('stats', 'duels', s.name, r.opp)}><PlayerTag name={r.opp} link={false} size={24} /></a></td>
                     <td className="r num">{r.shared}</td>
                     <td className="r num good">{r.ahead}</td>
                     <td className="r num bad hide-sm">{r.behind}</td>
@@ -410,57 +466,6 @@ function SheetView({ s, periodLabel, trend }: { s: PlayerSheet; periodLabel: str
   );
 }
 
-// ------------------------------------------------------------ Tendances
-
-function weekKey(day: string) {
-  const d = parseLocal(day);
-  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
-  return dayKey(monday);
-}
-
-function Tendances() {
-  const { races, activeNames, player } = useStore();
-  const ranked = useMemo(() => standings(races).filter((s) => activeNames.includes(s.name)).map((s) => s.name), [races, activeNames]);
-  const [gran, setGran] = useState<'month' | 'week'>('month');
-  const [sel, setSel] = useState<string[]>(() => ranked.slice(0, 3));
-  const toggle = (n: string) => setSel((s) => (s.includes(n) ? s.filter((x) => x !== n) : [...s, n]));
-  const keyOf = gran === 'month' ? (d: string) => monthKey(d) : weekKey;
-  const buckets = [...new Set(races.map((r) => keyOf(r.day)))].slice(gran === 'month' ? -12 : -16);
-  const series = sel.map((name) => {
-    const values: (number | null)[] = [], counts: (number | null)[] = [];
-    for (const b of buckets) {
-      const rs = races.filter((r) => keyOf(r.day) === b && r.p.includes(name));
-      values.push(rs.length >= 3 ? rs.reduce((s, r) => s + r.p.indexOf(name) + 1, 0) / rs.length : null);
-      counts.push(rs.length || null);
-    }
-    return { name, color: player(name).color, values, counts };
-  });
-  const labels = buckets.map((b) => (gran === 'month' ? fmtMonth(b, true) : `sem. ${fmtShort(b)}`));
-  return (
-    <>
-      <div className="filters">
-        <div className="seg">
-          <button className={gran === 'month' ? 'on' : ''} onClick={() => setGran('month')}>12 derniers mois</button>
-          <button className={gran === 'week' ? 'on' : ''} onClick={() => setGran('week')}>16 dernières semaines</button>
-        </div>
-      </div>
-      <div className="chips" role="group" aria-label="Pilotes affichés">
-        {ranked.map((n) => (
-          <button key={n} className="chip" aria-pressed={sel.includes(n)} style={{ '--c': player(n).color } as CSSProperties} onClick={() => toggle(n)}>
-            <span className="dot" />{n}
-          </button>
-        ))}
-      </div>
-      <Panel hud="cyan" title="Position moyenne" aside={<span className="hint">plus haut = meilleur · 3 courses min. par point</span>}>
-        {sel.length === 0 ? <Empty>Choisis au moins un pilote.</Empty> : (
-          <TrendChart labels={labels} series={series} min={1} max={4} invert ticks={[1, 2, 3, 4]} best={sel.length === 1}
-            format={(v) => (Number.isInteger(v) ? String(v) : fmtAvg(v))} height={260} />
-        )}
-      </Panel>
-    </>
-  );
-}
-
 // ------------------------------------------------------------ Records
 
 function runDates(r: Run) {
@@ -474,9 +479,9 @@ function Board({ title, rows, hud }: { title: string; hud?: 'yellow' | 'red'; ro
         {rows.map((r, i) => (
           <li key={r.key} className={i === 0 ? 'first' : ''}>
             <span className="board-rank">{i + 1}</span>
-            <span className="board-who">{r.who ? <PlayerTag name={r.who} size={26} /> : <a href={href('session', r.whenDay)}>{r.when}</a>}</span>
+            <span className="board-who">{r.who ? <PlayerTag name={r.who} size={26} /> : <a href={href('stats', 'session', r.whenDay)}>{r.when}</a>}</span>
             <span className="board-val">{r.value}</span>
-            {r.who && <a className="board-when" href={href('session', r.whenDay)}>{r.when}</a>}
+            {r.who && <a className="board-when" href={href('stats', 'session', r.whenDay)}>{r.when}</a>}
           </li>
         ))}
       </ol>
@@ -523,51 +528,6 @@ function Records() {
         )}
         <p className="hint">Une course avec le même nom deux fois est exclue des stats : corrige la ligne dans le Sheet, elle sera reprise à la synchro suivante. Deux saisies à moins de 60 secondes : seule la seconde compte.</p>
       </Section>
-    </>
-  );
-}
-
-// ------------------------------------------------------------ Sessions
-
-function Sessions() {
-  const { byDay, lastSeen } = useStore();
-  const sizes = useSessionSizes();
-  const [withP, setWithP] = useState('');
-  const [size, setSize] = useState('all');
-  const [limit, setLimit] = useState(30);
-  const list = [...byDay].reverse().filter(([d, rs]) => sizeOk(sizes.get(d)!, size) && (!withP || rs.some((r) => r.p.includes(withP))));
-  return (
-    <>
-      <div className="filters">
-        <label className="field"><span>Pilote présent</span>
-          <select id="s-with" value={withP} onChange={(e) => setWithP(e.target.value)}>
-            <option value="">Tout le monde</option>
-            {[...lastSeen.keys()].filter((n) => n !== 'Other').map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </label>
-        <label className="field"><span>Taille de session</span>
-          <select id="s-size" value={size} onChange={(e) => setSize(e.target.value)}>{SIZES.map((s) => <option key={s.k} value={s.k}>{s.l}</option>)}</select>
-        </label>
-        <span className="hint" style={{ alignSelf: 'center' }}>{list.length} sessions</span>
-      </div>
-      {list.length === 0 ? <Empty>Aucune session ne correspond.</Empty> : (
-        <ul className="sessions-list">
-          {list.slice(0, limit).map(([d, rs]) => {
-            const t = standings(rs);
-            return (
-              <li key={d}>
-                <a href={href('session', d)}>
-                  <span style={{ textTransform: 'capitalize' }}><b>{fmtDay(d, false)}</b><span className="sub-num">{d.slice(0, 4)}</span></span>
-                  <span className="num">{rs.length} c.</span>
-                  <span className="sl-players muted">{t.map((s) => s.name).join(', ')}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={t[0].name} size={24} /><b className="gold">{t[0].name}</b></span>
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {list.length > limit && <button className="btn" onClick={() => setLimit((l) => l + 30)}>Afficher 30 sessions de plus</button>}
     </>
   );
 }

@@ -34,9 +34,9 @@ export function cleanRaces(raw: RawRace[]): { races: Race[]; flagged: FlaggedRac
 
 // ---------------------------------------------------------------- dates et périodes
 
-export type PeriodKind = 'day' | 'month' | 'quarter' | 'semester' | 'year' | 'all';
+export type PeriodKind = 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year' | 'all';
 export const PERIOD_LABELS: Record<PeriodKind, string> = {
-  day: 'Jour', month: 'Mois', quarter: 'Trimestre', semester: 'Semestre', year: 'Année', all: 'All time',
+  day: 'Jour', week: 'Semaine', month: 'Mois', quarter: 'Trimestre', semester: 'Semestre', year: 'Année', all: 'All time',
 };
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const MONTHS_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
@@ -82,6 +82,15 @@ export function periodOf(kind: PeriodKind, ref: string): Period {
   });
   switch (kind) {
     case 'day': return { kind, start: ref, end: ref + '~', label: fmtDay(ref), key: ref };
+    case 'week': {
+      const d = parseLocal(ref);
+      const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+      const nextMon = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7);
+      const fri = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 4);
+      const same = mon.getMonth() === fri.getMonth();
+      const label = `Semaine du ${mon.getDate()}${same ? '' : ' ' + MONTHS[mon.getMonth()]} au ${fri.getDate()} ${MONTHS[fri.getMonth()]} ${fri.getFullYear()}`;
+      return { kind, start: dayKey(mon), end: dayKey(nextMon), label, key: dayKey(mon) };
+    }
     case 'month': return span(month, 1, fmtMonth(month));
     case 'quarter': { const q = Math.floor((m - 1) / 3); return span(`${y}-${pad(q * 3 + 1)}`, 3, `T${q + 1} ${y}`); }
     case 'semester': { const s = m <= 6 ? 0 : 1; return span(`${y}-${pad(s * 6 + 1)}`, 6, `S${s + 1} ${y}`); }

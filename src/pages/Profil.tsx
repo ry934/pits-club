@@ -75,7 +75,7 @@ function MyProfile() {
           <span className="hint">{session?.user.email}</span>
           <div className="btn-row">
             <a className="btn btn-primary" href="#/">Mon paddock</a>
-            <a className="btn" href={href('pilote', me!)}>Ma fiche</a>
+            <a className="btn" href={href('stats', 'pilote', me!)}>Ma fiche</a>
             {admin && <a className="btn" href="#/admin">Back-office</a>}
             <button className="btn" onClick={signOut}>{live ? 'Se déconnecter' : 'Changer de pilote'}</button>
           </div>

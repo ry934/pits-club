@@ -43,3 +43,15 @@ describe('records identiques au Sheet', () => {
     expect(Math.round(elo.rating.get('Paul')!)).toBeGreaterThan(1750);
   });
 });
+
+describe('période semaine', () => {
+  it('va du lundi au lundi suivant et navigue de semaine en semaine', async () => {
+    const { periodOf, previousPeriod, nextPeriod } = await import('./stats');
+    const w = periodOf('week', '2026-10-15');
+    expect([w.start, w.end]).toEqual(['2026-10-12', '2026-10-19']);
+    expect(w.label).toBe('Semaine du 12 au 16 octobre 2026');
+    const days = ['2026-10-05', '2026-10-14', '2026-10-20'];
+    expect(previousPeriod(w, days)?.start).toBe('2026-10-05');
+    expect(nextPeriod(w, days)?.start).toBe('2026-10-19');
+  });
+});

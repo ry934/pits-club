@@ -31,7 +31,7 @@ export function PlayerTag({ name, link = true, sub, size }: { name: string; link
       </span>
     </>
   );
-  return link ? <a className="ptag" href={href('pilote', name)}>{inner}</a> : <span className="ptag">{inner}</span>;
+  return link ? <a className="ptag" href={href('stats', 'pilote', name)}>{inner}</a> : <span className="ptag">{inner}</span>;
 }
 
 export const Pos = ({ n }: { n: number }) => <span className={`pos pos-${n}`}>P{n}</span>;

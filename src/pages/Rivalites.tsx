@@ -15,7 +15,7 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
   const refDay = races.at(-1)!.day;
   const h2hA = useMemo(() => headToHead(races, a, lastSeen, refDay), [a, races, lastSeen, refDay]);
   const h2hB = useMemo(() => headToHead(races, b, lastSeen, refDay), [b, races, lastSeen, refDay]);
-  const go = (x: string, y: string) => { window.location.hash = href('rivalites', x, y); };
+  const go = (x: string, y: string) => { window.location.hash = href('stats', 'duels', x, y); };
   const ca = player(a).color, cb = player(b).color;
   const n = d.shared.length;
   const recentOf = (name: string) => races.filter((r) => r.p.includes(name)).slice(-10).map((r) => r.p.indexOf(name) + 1);
@@ -28,8 +28,8 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
     return (
       <Panel title={`Indicateurs · ${name}`}>
         <div className="stack">
-          {nem && <span>Némésis : <a className="bad" href={href('rivalites', name, nem.opp)}><b>{nem.opp}</b></a> <span className="muted">({fmtPct(nem.pct)} devant)</span></span>}
-          {vic && <span>Rival le plus dominé : <a className="good" href={href('rivalites', name, vic.opp)}><b>{vic.opp}</b></a> <span className="muted">({fmtPct(vic.pct)} devant)</span></span>}
+          {nem && <span>Némésis : <a className="bad" href={href('stats', 'duels', name, nem.opp)}><b>{nem.opp}</b></a> <span className="muted">({fmtPct(nem.pct)} devant)</span></span>}
+          {vic && <span>Rival le plus dominé : <a className="good" href={href('stats', 'duels', name, vic.opp)}><b>{vic.opp}</b></a> <span className="muted">({fmtPct(vic.pct)} devant)</span></span>}
           {!nem && <span className="muted">Pas assez de courses en commun.</span>}
         </div>
       </Panel>
@@ -37,8 +37,7 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
   };
 
   return (
-    <div className="page">
-      <header className="page-head"><h1>Head-to-head</h1></header>
+    <>
       <div className="duel-pick">
         <select id="duel-a" aria-label="Premier pilote" value={a} onChange={(e) => go(e.target.value, e.target.value === b ? a : b)}>
           {options.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -53,9 +52,9 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
         <>
           <div className="chamfer-frame">
             <div className="scoreboard chamfer">
-              <a className="sb-side" href={href('pilote', a)}><Avatar name={a} size={64} /><span className="sb-name" style={{ color: ca }}>{a}</span></a>
+              <a className="sb-side" href={href('stats', 'pilote', a)}><Avatar name={a} size={64} /><span className="sb-name" style={{ color: ca }}>{a}</span></a>
               <div className="sb-score"><span>{d.aheadA}</span><span className="sb-sep">VS</span><span>{n - d.aheadA}</span></div>
-              <a className="sb-side" href={href('pilote', b)}><Avatar name={b} size={64} /><span className="sb-name" style={{ color: cb }}>{b}</span></a>
+              <a className="sb-side" href={href('stats', 'pilote', b)}><Avatar name={b} size={64} /><span className="sb-name" style={{ color: cb }}>{b}</span></a>
               <div className="sb-bar" aria-hidden="true"><span style={{ width: `${(d.aheadA / n) * 100}%`, background: ca }} /><span style={{ flex: 1, background: cb }} /></div>
               <span className="sb-hint hint">{a} finit devant dans {d.aheadA} des {n} courses disputées ensemble</span>
             </div>
@@ -89,7 +88,7 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
             <ol className="racelog">
               {d.shared.slice(-8).reverse().map((r) => (
                 <li key={r.id} style={{ borderLeftColor: r.p.indexOf(a) < r.p.indexOf(b) ? ca : cb }}>
-                  <a className="racelog-t num" href={href('session', r.day)}>{fmtShort(r.day)}</a>
+                  <a className="racelog-t num" href={href('stats', 'session', r.day)}>{fmtShort(r.day)}</a>
                   <span className="racelog-p">
                     <span className="racelog-entry"><Pos n={r.p.indexOf(a) + 1} />{a}</span>
                     <span className="racelog-entry"><Pos n={r.p.indexOf(b) + 1} />{b}</span>
@@ -102,7 +101,7 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
       )}
 
       <Matrix />
-    </div>
+    </>
   );
 }
 
@@ -130,7 +129,7 @@ function Matrix() {
                   const h = table.get(r)?.get(c);
                   return (
                     <td key={c} style={{ background: h ? color(h.pct) : 'transparent' }}>
-                      {h ? <a href={href('rivalites', r, c)} title={`${r} devant ${c} : ${fmtPct(h.pct)} sur ${h.shared} courses`}>{Math.round(h.pct * 100)}</a> : <span className="muted">·</span>}
+                      {h ? <a href={href('stats', 'duels', r, c)} title={`${r} devant ${c} : ${fmtPct(h.pct)} sur ${h.shared} courses`}>{Math.round(h.pct * 100)}</a> : <span className="muted">·</span>}
                     </td>
                   );
                 })}

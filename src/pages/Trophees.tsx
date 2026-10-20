@@ -1,7 +1,7 @@
 import { CSSProperties, useMemo, useState } from 'react';
 import { Emblem } from '../components/Emblem';
 import { Avatar, Empty, FormChips, Panel, PlacesBar } from '../components/ui';
-import { BADGES, BadgeDef, FAMILY_LABEL, Family, Holding, isInfamy, Rarity, RARITY_LABEL } from '../lib/badges';
+import { BADGE, BADGES, BadgeDef, FAMILY_LABEL, Family, Holding, isInfamy, Rarity, RARITY_LABEL } from '../lib/badges';
 import { fmtAvg, fmtShort, standings } from '../lib/stats';
 import { SETTINGS } from '../lib/types';
 import { href } from '../router';
@@ -20,8 +20,32 @@ export function Trophees({ tab }: { tab?: string }) {
           <button role="tab" aria-selected={t === 'pilotes'} className={t === 'pilotes' ? 'on' : ''} onClick={() => { window.location.hash = '#/trophees/pilotes'; }}>Pilotes</button>
         </div>
       </header>
-      {t === 'badges' ? <Gallery /> : <PilotList />}
+      {t === 'badges' ? <><Exploits /><Gallery /></> : <PilotList />}
     </div>
+  );
+}
+
+/** Les derniers trophées notables débloqués (hors communs), anciennement sur le Paddock. */
+function Exploits() {
+  const { badges, dayList, player } = useStore();
+  const lastDay = dayList.at(-1)!;
+  const feed = useMemo(() => [...badges.events].reverse().filter((e) => BADGE[e.badge].rarity !== 'common').slice(0, 6), [badges]);
+  if (feed.length === 0) return null;
+  return (
+    <Panel hud="yellow" title="Derniers exploits">
+      <ul className="feed">
+        {feed.map((e, k) => (
+          <li key={k} className={e.day === lastDay ? 'fresh' : ''}>
+            <Emblem badge={BADGE[e.badge]} size={36} />
+            <span>
+              <b>{player(e.player).displayName ?? e.player}</b> débloque <b className={rarityClass(BADGE[e.badge])} style={{ color: 'var(--rc)' }}>{BADGE[e.badge].name}</b>
+              <span className="sub-num">{RARITY_LABEL[BADGE[e.badge].rarity]}{e.detail ? ` · ${e.detail}` : ''}</span>
+            </span>
+            <a className="hint" href={href('stats', 'session', e.day)}>{fmtShort(e.day)}</a>
+          </li>
+        ))}
+      </ul>
+    </Panel>
   );
 }
 
@@ -135,7 +159,7 @@ function Detail({ badge, who, holders, onClose }: { badge: BadgeDef; who: string
           {badge.pending ? <span className="hint">{badge.pending}.</span> : holders.length > 0 ? (
             <div className="holders">
               {holders.map((x) => (
-                <a key={x.name} className="chip" style={{ '--c': 'var(--rc)', opacity: who && who !== x.name ? 0.5 : 1 } as CSSProperties} href={href('pilote', x.name)}>
+                <a key={x.name} className="chip" style={{ '--c': 'var(--rc)', opacity: who && who !== x.name ? 0.5 : 1 } as CSSProperties} href={href('stats', 'pilote', x.name)}>
                   <Avatar name={x.name} size={22} />{x.name} <span className="num muted">×{x.h.count} · {fmtShort(x.h.first)}</span>
                 </a>
               ))}
@@ -158,7 +182,7 @@ function PilotList() {
     const s = all.get(name)!;
     const recent = races.filter((r) => r.p.includes(name)).slice(-5).map((r) => r.p.indexOf(name) + 1);
     return (
-      <a key={name} className="pilot-card" href={href('pilote', name)} style={{ '--c': color, gridTemplateColumns: 'auto 1fr' } as CSSProperties}>
+      <a key={name} className="pilot-card" href={href('stats', 'pilote', name)} style={{ '--c': color, gridTemplateColumns: 'auto 1fr' } as CSSProperties}>
         <Avatar name={name} size={46} />
         <span className="stack" style={{ gap: 2 }}>
           <span style={{ font: '800 1.1rem var(--font-display)' }}>{name}</span>

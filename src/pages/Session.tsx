@@ -5,15 +5,20 @@ import { Emblem } from '../components/Emblem';
 import { BADGE } from '../lib/badges';
 import { href } from '../router';
 import { useStore } from '../store';
-import { fmtDay, fmtDuration, fmtTime, ratingAt, sessionState, sessionSummary } from '../lib/stats';
+import { dayKey, fmtDay, fmtDuration, fmtTime, ratingAt, sessionState, sessionSummary } from '../lib/stats';
 import { CloseSessionButton } from './Profil';
 
-export function Session({ day: dayParam }: { day?: string }) {
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+export function Session({ day: dayParam, afterTable }: { day?: string; afterTable?: React.ReactNode }) {
   const { byDay, dayList, elo, closedDays, runs, badges, player } = useStore();
   const L = (n: string) => player(n).displayName ?? n;
   const day = dayParam && byDay.has(dayParam) ? dayParam : dayList.at(-1);
   const s = useMemo(() => (day ? sessionSummary(day, byDay.get(day)!, elo) : null), [day, byDay, elo]);
   if (!day || !s) return <Empty>Aucune course pour l'instant. Les résultats apparaîtront dès la première réponse au formulaire.</Empty>;
+  const today = dayKey(new Date());
+  const isToday = day === today;
+  const noneToday = !dayParam && !isToday;
   const idx = dayList.indexOf(day);
   const prev = dayList[idx - 1], next = dayList[idx + 1];
   const state = sessionState(day, s.races, closedDays);
@@ -23,16 +28,18 @@ export function Session({ day: dayParam }: { day?: string }) {
   const unlocked = badges.events.filter((e) => e.day === day);
 
   return (
-    <div className="page">
+    <>
+      {noneToday && <p className="hint" style={{ margin: 0 }}>Pas encore de course aujourd'hui : voici la dernière session.</p>}
       <header className="session-head">
-        {prev ? <a className="iconbtn" href={href('session', prev)} aria-label="Session précédente">‹</a> : <span className="iconbtn off">‹</span>}
+        {prev ? <a className="iconbtn" href={href('stats', 'session', prev)} aria-label="Session précédente">‹</a> : <span className="iconbtn off">‹</span>}
         <div className="grow">
-          <span className={`state state-${state}`}>{state === 'live' ? 'En course' : 'Drapeau à damier'}</span>
-          <h1 style={{ textTransform: 'capitalize' }}>{fmtDay(day)}</h1>
+          <span className={`state state-${state}`}>{state === 'live' ? 'En course' : isToday ? 'Session du jour · terminée' : 'Drapeau à damier'}</span>
+          <h2 style={{ margin: 0 }}>{cap(fmtDay(day))}</h2>
           <span className="muted">{fmtTime(s.start)} à {fmtTime(s.end)}, {s.players.length} pilotes</span>
         </div>
-        {next ? <a className="iconbtn" href={href('session', next)} aria-label="Session suivante">›</a> : <span className="iconbtn off">›</span>}
+        {next ? <a className="iconbtn" href={href('stats', 'session', next)} aria-label="Session suivante">›</a> : <span className="iconbtn off">›</span>}
       </header>
+      {!isToday && dayList.includes(today) && <div><a className="btn btn-sm" href={href('stats', 'session', today)}>Revenir à la session du jour</a></div>}
       <div className="btn-row">
         {day === dayList.at(-1) && <a className={`btn ${state === 'live' ? 'btn-primary' : ''} live-link`} href="#/direct">Mode direct</a>}
         {state === 'live' && <CloseSessionButton day={day} />}
@@ -49,7 +56,7 @@ export function Session({ day: dayParam }: { day?: string }) {
 
       <div className="podium" aria-label="Podium du jour">
         {[1, 0, 2].map((i) => s.table[i] && (
-          <a key={i} className={`step step-${i + 1}`} href={href('pilote', s.table[i].name)}>
+          <a key={i} className={`step step-${i + 1}`} href={href('stats', 'pilote', s.table[i].name)}>
             <Avatar name={s.table[i].name} size={i === 0 ? 60 : 46} />
             <span className="step-name">{L(s.table[i].name)}</span>
             <span className="step-avg num"><CountUp value={s.table[i].avg} decimals={2} /></span>
@@ -62,10 +69,10 @@ export function Session({ day: dayParam }: { day?: string }) {
         <LapChart races={s.races} />
       </Panel>
 
-      <Section title="Classement du jour">
+      <Section title={isToday ? "Classement du jour" : "Classement de la session"} aside={<span className="hint">nombre de fois à chaque place</span>}>
         <div className="table-wrap">
-          <table className="table">
-            <thead><tr><th>#</th><th>Pilote</th><th className="r">Moy.</th><th className="r" title="Cote Elo en fin de session, et ce qu'elle a gagné ou perdu dans la journée">Cote</th><th className="r">Courses</th><th>Places</th><th className="r" title="Places gagnées par rapport à la position attendue selon la cote">Vs cote</th></tr></thead>
+          <table className="table session-table">
+            <thead><tr><th>#</th><th>Pilote</th><th className="r">Moy.</th><th className="r hide-sm" title="Cote Elo en fin de session, et ce qu'elle a gagné ou perdu dans la journée">Cote</th><th className="r hide-sm">Courses</th><th className="r pl-h"><Pos n={1} /></th><th className="r pl-h"><Pos n={2} /></th><th className="r pl-h"><Pos n={3} /></th><th className="r pl-h"><Pos n={4} /></th><th className="hide-sm">Répartition</th><th className="r hide-sm" title="Places gagnées par rapport à la position attendue selon la cote">Vs cote</th></tr></thead>
             <tbody>
               {s.table.map((r) => {
                 const g = s.surperf.find((x) => x.name === r.name)!.gain;
@@ -74,10 +81,11 @@ export function Session({ day: dayParam }: { day?: string }) {
                     <td className="rank">{r.rank}</td>
                     <td><PlayerTag name={r.name} /></td>
                     <td className="r"><Avg v={r.avg} /></td>
-                    <td className="r"><Cote v={ratingAt(elo, r.name, day)} delta={ratingAt(elo, r.name, day) - ratingAt(elo, r.name, day, true)} /></td>
-                    <td className="r num">{r.races}</td>
-                    <td style={{ minWidth: 110 }}><PlacesBar places={r.places} total={r.races} /><span className="sub-num num">{r.places.join(' · ')}</span></td>
-                    <td className={`r num ${g > 0.5 ? 'good' : g < -0.5 ? 'bad' : ''}`}>{g > 0 ? '+' : ''}{g.toFixed(1).replace('.', ',')}</td>
+                    <td className="r hide-sm"><Cote v={ratingAt(elo, r.name, day)} delta={ratingAt(elo, r.name, day) - ratingAt(elo, r.name, day, true)} /></td>
+                    <td className="r num hide-sm">{r.races}</td>
+                    {r.places.map((n, k) => <td key={k} className={`r num pl-count ${n === 0 ? 'zero' : ''}`}>{n}</td>)}
+                    <td className="hide-sm" style={{ minWidth: 110 }}><PlacesBar places={r.places} total={r.races} /></td>
+                    <td className={`r num hide-sm ${g > 0.5 ? 'good' : g < -0.5 ? 'bad' : ''}`}>{g > 0 ? '+' : ''}{g.toFixed(1).replace('.', ',')}</td>
                   </tr>
                 );
               })}
@@ -85,6 +93,8 @@ export function Session({ day: dayParam }: { day?: string }) {
           </table>
         </div>
       </Section>
+
+      {afterTable}
 
       {unlocked.length > 0 && (
         <Section title="Trophées débloqués ce jour-là">
@@ -105,11 +115,11 @@ export function Session({ day: dayParam }: { day?: string }) {
             <li key={r.id}>
               <span className="racelog-n num">{s.races.length - k}</span>
               <span className="racelog-t num">{fmtTime(r.ts)}</span>
-              <span className="racelog-p">{r.p.map((n, i) => <span key={n} className="racelog-entry"><Pos n={i + 1} />{n === 'Other' ? <span className="muted">Ancien joueur</span> : <a href={href('pilote', n)}>{player(n).displayName ?? n}</a>}</span>)}</span>
+              <span className="racelog-p">{r.p.map((n, i) => <span key={n} className="racelog-entry"><Pos n={i + 1} />{n === 'Other' ? <span className="muted">Ancien joueur</span> : <a href={href('stats', 'pilote', n)}>{player(n).displayName ?? n}</a>}</span>)}</span>
             </li>
           ))}
         </ol>
       </Section>
-    </div>
+    </>
   );
 }
