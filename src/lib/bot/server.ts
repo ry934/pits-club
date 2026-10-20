@@ -168,3 +168,94 @@ export function firstJson(s: string): unknown {
 }
 
 export { debriefStory };
+
+// ------------------------------------------------------------------ horoscope IA (actu du jour + stats)
+
+export type NewsItem = { titre: string; resume: string };
+export type AiHoroscope = { sign: string; lines: string[]; lucky: number; news: string | null; star: string | null };
+
+/** Étape 1 (avec recherche Google) : quelques actus du jour, légères et exploitables pour faire rire. */
+export function newsPrompt(day: string): { system: string; user: string } {
+  return {
+    system: [
+      "Tu es documentaliste pour un horoscope humoristique. Tu cherches l'actualité réelle du jour sur le web.",
+      'Choisis 8 actualités récentes (24-48 h) variées : insolite, sport, tech, people, météo, culture, conso, science, faits divers légers.',
+      "Exclus strictement : décès, guerres, attentats, catastrophes avec victimes, violences, maladies graves, politique clivante, religion.",
+      'Réponds UNIQUEMENT avec un JSON : {"news":[{"titre":"...","resume":"une phrase factuelle, 25 mots max"}]}. Aucun texte autour.',
+    ].join('\n'),
+    user: `Date du jour : ${day} (France). Donne les actus.`,
+  };
+}
+
+export function parseNews(raw: string): NewsItem[] {
+  const out = firstJson(raw) as { news?: unknown } | null;
+  const list = Array.isArray(out?.news) ? out!.news : [];
+  return (list as Record<string, unknown>[])
+    .map((n) => ({ titre: String(n?.titre ?? '').trim().slice(0, 140), resume: String(n?.resume ?? '').trim().slice(0, 240) }))
+    .filter((n) => n.titre.length > 5)
+    .slice(0, 10);
+}
+
+type HFacts = { name: string; [k: string]: unknown };
+
+/** Étape 2 : un horoscope loufoque par pilote, qui mélange ses vraies stats et une actu du jour. */
+export function horoscopePrompt(day: string, facts: HFacts[], news: NewsItem[], o: BotOptions): { system: string; user: string } {
+  const L = o.label;
+  const tone = {
+    sobre: 'Humour absurde et bienveillant, aucune moquerie appuyée.',
+    taquin: "Chambrage entre collègues : fausse solennité d'astrologue, ironie, mauvaise foi assumée. Taquine sans humilier.",
+    piquant: 'Pince-sans-rire et mordant, franchement absurde, mais toujours bon enfant.',
+  }[o.tone];
+  const system = [
+    "Tu es Madame Kartmira, astrologue de pacotille qui rédige l'horoscope quotidien d'un club de Mario Kart 8 entre collègues (parties à la pause de midi, 4 pilotes par course, places 1 à 4).",
+    "Style : LOUFOQUE. Horoscope parodique, prédictions absurdes, causalités cosmiques ridicules, comparaisons inattendues, chutes. Pense « Les Inconnus » croisé avec un astrologue de télé-achat.",
+    tone,
+    "Pour CHAQUE pilote : rattache sa prédiction à UNE actu du jour (différente d'un pilote à l'autre si possible), détournée de façon absurde vers sa course du midi. Ex. d'esprit : « Le Louvre a perdu un tableau ? Toi tu vas perdre ta 2e place au même rythme : discrètement, puis tout le monde en parle. »",
+    "Si la liste d'actus est vide, invente des brèves manifestement fictives et absurdes (ex. « Un lama nommé directeur de la RATP »), jamais crédibles.",
+    "Dans les phrases, appelle chaque pilote par le nom fourni dans « pilote ».",
+    "Glisse au moins une de ses vraies stats (moyenne, forme, jour de la semaine, némésis ou victime) dans une ligne, chiffres exacts tels que fournis. N'invente aucun chiffre.",
+    "Interdits : physique, vie privée, travail ou résultats de l'entreprise, sujets graves. Sans emoji, sans hashtag. N'accorde pas de genre aux pilotes (évite il/elle).",
+    `Pilotes à ne pas chambrer (reste doux avec eux) : ${o.optout.map(L).join(', ') || 'aucun'}.`,
+    'Format de sortie : UNIQUEMENT un JSON :',
+    '{"horoscopes":[{"pilote":"<nom exact tel que fourni>","signe":"signe astral absurde inventé, 2 à 5 mots, ex. Banane ascendant Carapace","actu":"titre court de l\'actu utilisée","lignes":["3 phrases, 30 mots max chacune : la prophétie liée à l\'actu, la stat détournée, un conseil absurde"],"place":1,"astre":"<nom d\'un autre pilote ou null>"}]}',
+  ].join('\n');
+  const user = JSON.stringify({
+    date: day,
+    actus: news,
+    pilotes: facts.map((f) => {
+      const { name, nemesis, victime, ...rest } = f as HFacts & { nemesis?: { pilote: string } | null; victime?: { pilote: string } | null };
+      return {
+        pilote: L(name), ...rest,
+        nemesis: nemesis ? { ...nemesis, pilote: L(nemesis.pilote) } : null,
+        victime: victime ? { ...victime, pilote: L(victime.pilote) } : null,
+      };
+    }),
+  });
+  return { system, user };
+}
+
+/** `players` : nom interne et nom affiché (celui que l'IA a reçu). Renvoie les horoscopes indexés par nom interne. */
+export function parseHoroscopes(raw: string, players: { name: string; display: string }[]): Record<string, AiHoroscope> {
+  const out = firstJson(raw) as { horoscopes?: unknown } | null;
+  const list = Array.isArray(out?.horoscopes) ? out!.horoscopes as Record<string, unknown>[] : [];
+  const res: Record<string, AiHoroscope> = {};
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const find = (v: unknown) => players.find((p) => norm(p.display) === norm(String(v ?? '')) || norm(p.name) === norm(String(v ?? '')))?.name ?? null;
+  for (const h of list) {
+    const name = find(h?.pilote);
+    if (!name || res[name]) continue;
+    const lines = (Array.isArray(h.lignes) ? h.lignes : []).map((l) => String(l).replace(/\s+/g, ' ').trim()).filter((l) => l.length > 8).slice(0, 4).map((l) => l.slice(0, 280));
+    if (lines.length < 2) continue;
+    const place = Math.round(Number(h.place));
+    const astre = find(h.astre);
+    const star = astre && astre !== name ? astre : null;
+    res[name] = {
+      sign: String(h.signe ?? '').trim().slice(0, 60) || 'Signe inconnu (même des astres)',
+      lines,
+      lucky: place >= 1 && place <= 4 ? place : 1,
+      news: String(h.actu ?? '').trim().slice(0, 140) || null,
+      star,
+    };
+  }
+  return res;
+}

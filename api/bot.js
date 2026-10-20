@@ -43,6 +43,7 @@ function cleanRaces(raw) {
   }
   return { races, flagged, replaced };
 }
+var WEEKDAYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
 var pad = (n) => String(n).padStart(2, "0");
 var fmtTime = (d) => `${pad(d.getHours())}h${pad(d.getMinutes())}`;
 var fmtAvg = (n) => n.toFixed(2).replace(".", ",");
@@ -107,6 +108,27 @@ function ratingAt(elo, name, day, strict = false) {
     else break;
   }
   return v;
+}
+function headToHead(races, name, lastSeen, refDay) {
+  const m = /* @__PURE__ */ new Map();
+  for (const r of races) {
+    const i = r.p.indexOf(name);
+    if (i < 0) continue;
+    r.p.forEach((o, j) => {
+      if (j === i) return;
+      const s = m.get(o) ?? { shared: 0, ahead: 0 };
+      s.shared++;
+      if (i < j) s.ahead++;
+      m.set(o, s);
+    });
+  }
+  const limit = parseLocal(refDay).getTime() - SETTINGS.hideOpponentAfterDays * 864e5;
+  return [...m].map(([opp, s]) => ({ opp, ...s, pct: s.ahead / s.shared, lastSeen: lastSeen.get(opp) ?? "" })).filter((h) => h.shared >= SETTINGS.minSharedH2H && parseLocal(h.lastSeen).getTime() >= limit && h.opp !== "Other").sort((a, b) => b.pct - a.pct);
+}
+function lastSeenMap(races) {
+  const m = /* @__PURE__ */ new Map();
+  for (const r of races) r.p.forEach((n) => m.set(n, r.day));
+  return m;
 }
 
 // src/lib/takes.ts
@@ -636,6 +658,104 @@ function firstJson(s) {
     return null;
   }
 }
+function newsPrompt(day) {
+  return {
+    system: [
+      "Tu es documentaliste pour un horoscope humoristique. Tu cherches l'actualit\xE9 r\xE9elle du jour sur le web.",
+      "Choisis 8 actualit\xE9s r\xE9centes (24-48 h) vari\xE9es : insolite, sport, tech, people, m\xE9t\xE9o, culture, conso, science, faits divers l\xE9gers.",
+      "Exclus strictement : d\xE9c\xE8s, guerres, attentats, catastrophes avec victimes, violences, maladies graves, politique clivante, religion.",
+      'R\xE9ponds UNIQUEMENT avec un JSON : {"news":[{"titre":"...","resume":"une phrase factuelle, 25 mots max"}]}. Aucun texte autour.'
+    ].join("\n"),
+    user: `Date du jour : ${day} (France). Donne les actus.`
+  };
+}
+function parseNews(raw) {
+  const out = firstJson(raw);
+  const list = Array.isArray(out?.news) ? out.news : [];
+  return list.map((n) => ({ titre: String(n?.titre ?? "").trim().slice(0, 140), resume: String(n?.resume ?? "").trim().slice(0, 240) })).filter((n) => n.titre.length > 5).slice(0, 10);
+}
+function horoscopePrompt(day, facts, news, o) {
+  const L = o.label;
+  const tone = {
+    sobre: "Humour absurde et bienveillant, aucune moquerie appuy\xE9e.",
+    taquin: "Chambrage entre coll\xE8gues : fausse solennit\xE9 d'astrologue, ironie, mauvaise foi assum\xE9e. Taquine sans humilier.",
+    piquant: "Pince-sans-rire et mordant, franchement absurde, mais toujours bon enfant."
+  }[o.tone];
+  const system = [
+    "Tu es Madame Kartmira, astrologue de pacotille qui r\xE9dige l'horoscope quotidien d'un club de Mario Kart 8 entre coll\xE8gues (parties \xE0 la pause de midi, 4 pilotes par course, places 1 \xE0 4).",
+    "Style : LOUFOQUE. Horoscope parodique, pr\xE9dictions absurdes, causalit\xE9s cosmiques ridicules, comparaisons inattendues, chutes. Pense \xAB Les Inconnus \xBB crois\xE9 avec un astrologue de t\xE9l\xE9-achat.",
+    tone,
+    "Pour CHAQUE pilote : rattache sa pr\xE9diction \xE0 UNE actu du jour (diff\xE9rente d'un pilote \xE0 l'autre si possible), d\xE9tourn\xE9e de fa\xE7on absurde vers sa course du midi. Ex. d'esprit : \xAB Le Louvre a perdu un tableau ? Toi tu vas perdre ta 2e place au m\xEAme rythme : discr\xE8tement, puis tout le monde en parle. \xBB",
+    "Si la liste d'actus est vide, invente des br\xE8ves manifestement fictives et absurdes (ex. \xAB Un lama nomm\xE9 directeur de la RATP \xBB), jamais cr\xE9dibles.",
+    "Dans les phrases, appelle chaque pilote par le nom fourni dans \xAB pilote \xBB.",
+    "Glisse au moins une de ses vraies stats (moyenne, forme, jour de la semaine, n\xE9m\xE9sis ou victime) dans une ligne, chiffres exacts tels que fournis. N'invente aucun chiffre.",
+    "Interdits : physique, vie priv\xE9e, travail ou r\xE9sultats de l'entreprise, sujets graves. Sans emoji, sans hashtag. N'accorde pas de genre aux pilotes (\xE9vite il/elle).",
+    `Pilotes \xE0 ne pas chambrer (reste doux avec eux) : ${o.optout.map(L).join(", ") || "aucun"}.`,
+    "Format de sortie : UNIQUEMENT un JSON :",
+    `{"horoscopes":[{"pilote":"<nom exact tel que fourni>","signe":"signe astral absurde invent\xE9, 2 \xE0 5 mots, ex. Banane ascendant Carapace","actu":"titre court de l'actu utilis\xE9e","lignes":["3 phrases, 30 mots max chacune : la proph\xE9tie li\xE9e \xE0 l'actu, la stat d\xE9tourn\xE9e, un conseil absurde"],"place":1,"astre":"<nom d'un autre pilote ou null>"}]}`
+  ].join("\n");
+  const user = JSON.stringify({
+    date: day,
+    actus: news,
+    pilotes: facts.map((f) => {
+      const { name, nemesis, victime, ...rest } = f;
+      return {
+        pilote: L(name),
+        ...rest,
+        nemesis: nemesis ? { ...nemesis, pilote: L(nemesis.pilote) } : null,
+        victime: victime ? { ...victime, pilote: L(victime.pilote) } : null
+      };
+    })
+  });
+  return { system, user };
+}
+function parseHoroscopes(raw, players) {
+  const out = firstJson(raw);
+  const list = Array.isArray(out?.horoscopes) ? out.horoscopes : [];
+  const res = {};
+  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const find = (v) => players.find((p) => norm(p.display) === norm(String(v ?? "")) || norm(p.name) === norm(String(v ?? "")))?.name ?? null;
+  for (const h of list) {
+    const name = find(h?.pilote);
+    if (!name || res[name]) continue;
+    const lines = (Array.isArray(h.lignes) ? h.lignes : []).map((l) => String(l).replace(/\s+/g, " ").trim()).filter((l) => l.length > 8).slice(0, 4).map((l) => l.slice(0, 280));
+    if (lines.length < 2) continue;
+    const place = Math.round(Number(h.place));
+    const astre = find(h.astre);
+    const star = astre && astre !== name ? astre : null;
+    res[name] = {
+      sign: String(h.signe ?? "").trim().slice(0, 60) || "Signe inconnu (m\xEAme des astres)",
+      lines,
+      lucky: place >= 1 && place <= 4 ? place : 1,
+      news: String(h.actu ?? "").trim().slice(0, 140) || null,
+      star
+    };
+  }
+  return res;
+}
+
+// src/lib/daily.ts
+function horoscopeFacts(name, races, day) {
+  const mine = races.filter((r) => r.p.includes(name));
+  const pos = (r) => r.p.indexOf(name) + 1;
+  const avg = (rs) => rs.length ? Number((rs.reduce((s, r) => s + pos(r), 0) / rs.length).toFixed(2)) : null;
+  const wd = parseLocal(day).getDay();
+  const onDay = mine.filter((r) => r.ts.getDay() === wd);
+  const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? day).filter((h) => h.shared >= 10);
+  const nem = [...h2h].sort((a, b) => a.pct - b.pct)[0];
+  const vic = [...h2h].sort((a, b) => b.pct - a.pct)[0];
+  return {
+    name,
+    courses: mine.length,
+    moyenne: avg(mine),
+    jour: WEEKDAYS[wd],
+    moyenne_ce_jour: onDay.length >= 5 ? avg(onDay) : null,
+    courses_ce_jour: onDay.length,
+    forme_20: mine.length >= 10 ? avg(mine.slice(-20)) : null,
+    nemesis: nem ? { pilote: nem.opp, devant_pct: Math.round(nem.pct * 100) } : null,
+    victime: vic && vic.opp !== nem?.opp ? { pilote: vic.opp, devant_pct: Math.round(vic.pct * 100) } : null
+  };
+}
 
 // server/bot.ts
 var env = (k) => (process.env[k] ?? "").trim();
@@ -657,13 +777,13 @@ async function currentUser(jwt) {
   return r.ok ? r.json() : null;
 }
 var aiKey = () => env("GEMINI_API_KEY") || env("GOOGLE_API_KEY") || (env("ANTHROPIC_API_KEY").startsWith("AIza") ? env("ANTHROPIC_API_KEY") : "");
-async function ai(models, system, user, maxTokens, asJson = false) {
+async function ai(models, system, user, maxTokens, asJson = false, search = false) {
   const list = (Array.isArray(models) ? models : [models]).filter((m, i, a) => m && a.indexOf(m) === i);
   let last;
   for (const model of list) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await aiOnce(model, system, user, maxTokens, asJson);
+        return await aiOnce(model, system, user, maxTokens, asJson, search);
       } catch (e) {
         last = e;
         if (!/IA : (429|500|503)/.test(String(e))) break;
@@ -673,15 +793,17 @@ async function ai(models, system, user, maxTokens, asJson = false) {
   }
   throw last;
 }
-async function aiOnce(model, system, user, maxTokens, asJson) {
+async function aiOnce(model, system, user, maxTokens, asJson, search = false) {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": aiKey(), "content-type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
+      // Recherche Google (grounding) : l'IA lit l'actualité du jour. Incompatible avec la sortie JSON forcée.
+      ...search ? { tools: [{ google_search: {} }] } : {},
       // Marge large : sur les modèles qui « réfléchissent », le raisonnement consomme aussi ce budget.
-      generationConfig: { maxOutputTokens: Math.max(maxTokens * 4, 1024), ...asJson ? { responseMimeType: "application/json" } : {} }
+      generationConfig: { maxOutputTokens: Math.max(maxTokens * 4, 1024), ...asJson && !search ? { responseMimeType: "application/json" } : {} }
     })
   });
   if (!r.ok) throw new Error(`IA : ${r.status} (${model}) ${(await r.text()).replace(/\s+/g, " ").slice(0, 200)}`);
@@ -741,6 +863,60 @@ async function processLog(logId) {
     return { ok: false, error };
   }
 }
+var parisDay = () => (/* @__PURE__ */ new Date()).toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
+var inflight = /* @__PURE__ */ new Map();
+async function storedHoroscopes(jwt, day) {
+  const r = await fetch(`${SB_URL()}/rest/v1/horoscopes?select=body,signals,players(name)&day=eq.${day}`, {
+    headers: { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` }
+  });
+  if (!r.ok) return {};
+  const rows = await r.json();
+  return Object.fromEntries(rows.filter((x) => x.players?.name && x.signals).map((x) => [x.players.name, x.signals]));
+}
+async function horoscopes(jwt, force) {
+  const day = parisDay();
+  if (!force) {
+    const stored = await storedHoroscopes(jwt, day);
+    if (Object.keys(stored).length) return { ok: true, day, horoscopes: stored, cached: true };
+  }
+  if (!aiKey()) return { ok: false, unavailable: true, reason: "cl\xE9 IA absente" };
+  if (!env("BOT_SECRET")) return { ok: false, unavailable: true, reason: "BOT_SECRET absent" };
+  const key = `${day}:${force}`;
+  if (!inflight.has(key)) inflight.set(key, generateHoroscopes(day).finally(() => inflight.delete(key)));
+  try {
+    return await inflight.get(key);
+  } catch (e) {
+    return { ok: false, unavailable: true, reason: String(e instanceof Error ? e.message : e).slice(0, 200) };
+  }
+}
+async function generateHoroscopes(day) {
+  const secret = env("BOT_SECRET");
+  const p = await rpc("bot_payload", { secret, p_log: null, p_day: day });
+  const raw = p.races.map(([ts, a, b, c, d, src]) => ({ ts, p: [a, b, c, d], src }));
+  const { races } = cleanRaces(raw);
+  const active = p.players.filter((x) => x.active && x.name !== "Other");
+  if (!active.length) return { ok: false, reason: "aucun pilote actif" };
+  const o = optionsFrom(p);
+  let news = [];
+  let newsError = null;
+  try {
+    const np = newsPrompt(day);
+    news = parseNews(await ai(PEN_CHAIN, np.system, np.user, 900, true, true));
+  } catch (e) {
+    newsError = String(e instanceof Error ? e.message : e).slice(0, 200);
+  }
+  const facts = active.map((x) => horoscopeFacts(x.name, races, day));
+  const hp = horoscopePrompt(day, facts, news, o);
+  const out = parseHoroscopes(
+    await ai(PEN_CHAIN, hp.system, hp.user, 350 * active.length, true),
+    active.map((x) => ({ name: x.name, display: o.label(x.name) }))
+  );
+  const names = Object.keys(out);
+  if (!names.length) throw new Error("horoscopes hors format");
+  const rows = names.map((n) => ({ name: n, body: out[n].lines.join("\n"), signals: { ...out[n], ai: true } }));
+  await rpc("horoscope_save", { secret, p_day: day, p_rows: rows });
+  return { ok: true, day, horoscopes: Object.fromEntries(rows.map((r) => [r.name, r.signals])), news: news.map((n) => n.titre), newsError };
+}
 async function POST(req) {
   let body = {};
   try {
@@ -785,6 +961,7 @@ async function POST(req) {
     }
   }
   const admin = await rpc("is_admin", {}, jwt).catch(() => false);
+  if (action === "horoscope") return json(await horoscopes(jwt, body.force === true && admin));
   if (!admin) return json({ error: "R\xE9serv\xE9 aux admins" }, 403);
   if (action === "status") {
     let secretOk = false;

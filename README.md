@@ -48,8 +48,10 @@ Polices : Oxanium (titres, chiffres), DM Sans (texte), JetBrains Mono (positions
 dessinés en SVG dans `src/components/Emblem.tsx` (originaux, aucun asset Nintendo).
 
 ## Ce qui est réel, ce qui est simulé
-- **Réel** : classements, sessions, rivalités, records, trophées (calculés sur l'historique), horoscope et défi du jour
-  (version provisoire générée à partir des stats, l'IA arrive au lot 3).
+- **Réel** : classements, sessions, rivalités, records, trophées (calculés sur l'historique), défi du jour.
+- **Horoscope IA** : chaque jour, le premier pilote connecté déclenche la génération (Gemini lit l'actu du jour via la
+  recherche Google, puis écrit un horoscope loufoque par pilote à partir de l'actu et de ses vraies stats). Stocké dans
+  `horoscopes`, relu par les autres. Repli local sans IA si la clé ou l'API manquent. Migration : `010_horoscope_ia.sql`.
 - **Simulé** : `src/mock/takes.ts` uniquement. Les Takes des autres pilotes sont fictifs (résolus sur les vrais
   résultats) et le Take de l'utilisateur reste dans son navigateur. Rien n'est envoyé à un serveur : la confidentialité
   avant 13h, les comptes et la reformulation IA arrivent au lot 2 (RLS déjà prévue dans la migration).

@@ -310,6 +310,10 @@ select:hover, input:hover, textarea:hover { border-color: var(--steel); }
 .horoscope ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .horoscope li { padding-left: 16px; position: relative; font-size: 0.92rem; }
 .horoscope li::before { content: ''; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; background: var(--purple); transform: rotate(45deg); }
+.horoscope .astro-news { align-self: flex-start; font: 600 0.72rem var(--font-mono, monospace); letter-spacing: 0.04em; text-transform: uppercase; color: var(--purple); border: 1px solid var(--purple); padding: 3px 8px; opacity: 0.85; }
+.horoscope .astro-loading { animation: astro-pulse 1.6s ease-in-out infinite; }
+@keyframes astro-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .horoscope .astro-loading { animation: none; } }
 .countdown { display: flex; gap: 8px; }
 .countdown .cd { display: flex; flex-direction: column; align-items: center; min-width: 58px; padding: 8px 6px; background: #0d1020; border: 1px solid rgba(168, 121, 255, 0.4); }
 .countdown .cd b { font: 700 1.6rem/1 var(--font-mono); color: var(--purple); }

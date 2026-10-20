@@ -2,6 +2,7 @@ import { CSSProperties, ReactNode, useEffect, useMemo, useState } from 'react';
 import { Avatar, Panel } from '../components/ui';
 import { dailyChallenge, horoscope, nextDeadline, rivalryOfTheDay } from '../lib/daily';
 import { greeting } from '../lib/greeting';
+import { useAiHoroscopes } from '../lib/horoscopeAi';
 import { sessionFacts } from '../lib/bot/facts';
 import { debriefStory } from '../lib/bot/messages';
 import { useSettings } from '../lib/settings';
@@ -39,7 +40,7 @@ function slackText(t: string): ReactNode[] {
 /** Paddock : le rituel du jour. Les chiffres détaillés vivent dans Stats. */
 export function Paddock() {
   const { races, byDay, dayList, elo, activeNames, player, closedDays } = useStore();
-  const { me } = useAuth();
+  const { me, session, admin } = useAuth();
   const { settings } = useSettings();
   const now = new Date();
   const today = dayKey(now);
@@ -49,7 +50,9 @@ export function Paddock() {
   const display = me ? player(me).displayName ?? me : '';
   const hello = useMemo(() => (me ? greeting(me, display, races, now) : null), [me, display, races, today]);
   const [astroFor, setAstroFor] = useState(() => me ?? activeNames[0]);
-  const astro = useMemo(() => horoscope(astroFor, races, today), [astroFor, races, today]);
+  const aiAstro = useAiHoroscopes(!!session && !!me, today, admin);
+  const localAstro = useMemo(() => horoscope(astroFor, races, today), [astroFor, races, today]);
+  const astro = aiAstro.byName[astroFor] ?? localAstro;
   const rivalry = useMemo(() => rivalryOfTheDay(races, activeNames, today), [races, activeNames, today]);
   const challenge = useMemo(() => dailyChallenge(today, races, byDay.get(today) ?? []), [today, races, byDay]);
   const deadline = useMemo(() => nextDeadline(), []);
@@ -137,9 +140,20 @@ export function Paddock() {
             </select>
           }>
             <div className="stack">
-              <span className="sign">Signe : {astro.sign}</span>
-              <ul>{astro.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
-              <span className="hint">Place porte-bonheur : P{astro.lucky}.</span>
+              {aiAstro.status === 'loading' && !aiAstro.byName[astroFor]
+                ? <p className="hint astro-loading">Madame Kartmira lit le journal du jour et consulte une boule de cristal en forme de carapace…</p>
+                : <>
+                  <span className="sign">Signe : {astro.sign}</span>
+                  {astro.news && <span className="astro-news">Inspiré de l'actu : {astro.news}</span>}
+                  <ul>{astro.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+                  <span className="hint">
+                    Place porte-bonheur : P{astro.lucky}.{astro.star ? ` Astre du jour : ${player(astro.star).displayName ?? astro.star}.` : ''}
+                    {!astro.ai && aiAstro.status === 'off' && session ? ' (version de secours, les astres IA sont en pause)' : ''}
+                  </span>
+                  {aiAstro.regenerate && aiAstro.status !== 'loading' && (
+                    <button type="button" className="btn btn-sm" onClick={aiAstro.regenerate}>Relancer les astres (admin)</button>
+                  )}
+                </>}
             </div>
           </Panel>
         </div>

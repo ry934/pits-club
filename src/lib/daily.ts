@@ -4,56 +4,83 @@ import { Race } from './types';
 
 const pick = <T,>(arr: T[], seed: number) => arr[seed % arr.length];
 
-// ------------------------------------------------------------ horoscope (version provisoire, sans IA)
+// ------------------------------------------------------------ horoscope
+// La version IA (actu du jour + stats, rédigée par Gemini) est produite côté serveur et stockée dans `horoscopes`.
+// Ce qui suit sert de faits d'entrée pour l'IA, et de repli (mode démo, IA indisponible).
 
-const SIGNS = ['Turbo', 'Dérapage', 'Aspiration', 'Chicane', 'Épingle', 'Ligne droite', 'Pole position', 'Drapeau à damier'];
+const SIGNS = [
+  'Banane ascendant Carapace', 'Turbo raté', 'Éclair en retard', 'Dérapage contrôlé (en théorie)',
+  'Carapace bleue rancunière', 'Klaxon mélancolique', 'Pièce d\'or solitaire', 'Champignon doré inflationniste',
+  'Bob-omb sentimental', 'Plume nostalgique', 'Nuage Lakitu', 'Boomerang qui revient toujours',
+];
 const ADVICE = [
-  'Garde ta manette à deux mains, même pendant les ralentis.',
-  'Évite de commenter ta propre trajectoire à voix haute.',
-  'Le premier virage ne se gagne pas, il se survit.',
-  'Bois un verre d\'eau avant la course 4. Fais-nous confiance.',
-  'Choisis ton kart en moins de dix secondes : l\'hésitation coûte cher.',
-  'Ne regarde pas l\'écran du voisin. Il le sait.',
-  'Annonce ta victoire avant le départ. Ou pas.',
-  'Laisse passer la tempête des trois premiers tours.',
+  'Mercure est rétrograde, ton kart aussi. Ne t\'en sers pas comme excuse avant la course 3.',
+  'Un pigeon croisé ce matin annonce une carapace verte. Ou une fiente. Les astres hésitent.',
+  'Mange léger : chaque gramme de quiche se paie en virage.',
+  'Ton aura de pilote est à 14 %. Respire, recharge-la sur la ligne droite.',
+  'Annonce ta victoire avant le départ. Si ça rate, accuse la manette 3.',
+  'Les astres te déconseillent le volant moto. Ils ne disent pas pourquoi. Ils ont vu des choses.',
+  'Ne regarde pas l\'écran du voisin. Il le sait. Il te regarde aussi.',
+  'Aujourd\'hui, le premier virage est un concept, pas un objectif.',
+  'Saturne entre en maison Rainbow Road : chute probable, dignité optionnelle.',
+  'Bois un verre d\'eau avant la course 4. Le cosmos est très clair là-dessus.',
 ];
 
-export type Horoscope = { sign: string; lines: string[]; star: string | null; lucky: number };
+export type HoroscopeFacts = {
+  name: string; courses: number; moyenne: number | null; jour: string;
+  moyenne_ce_jour: number | null; courses_ce_jour: number;
+  forme_20: number | null; nemesis: { pilote: string; devant_pct: number } | null; victime: { pilote: string; devant_pct: number } | null;
+};
 
-export function horoscope(name: string, races: Race[], day: string): Horoscope {
-  const seed = seedOf(name + day);
+/** Faits chiffrés d'un pilote pour l'horoscope (entrée de l'IA). */
+export function horoscopeFacts(name: string, races: Race[], day: string): HoroscopeFacts {
   const mine = races.filter((r) => r.p.includes(name));
   const pos = (r: Race) => r.p.indexOf(name) + 1;
-  const all = mine.reduce((s, r) => s + pos(r), 0) / Math.max(1, mine.length);
+  const avg = (rs: Race[]) => (rs.length ? Number((rs.reduce((s, r) => s + pos(r), 0) / rs.length).toFixed(2)) : null);
   const wd = parseLocal(day).getDay();
   const onDay = mine.filter((r) => r.ts.getDay() === wd);
-  const dayAvg = onDay.reduce((s, r) => s + pos(r), 0) / Math.max(1, onDay.length);
-  const recent = mine.slice(-20);
-  const form = recent.reduce((s, r) => s + pos(r), 0) / Math.max(1, recent.length);
-  const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? day);
-  const nemesis = [...h2h].sort((a, b) => a.pct - b.pct)[0];
-  const victim = h2h[0];
-  const lines: string[] = [];
+  const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? day).filter((h) => h.shared >= 10);
+  const nem = [...h2h].sort((a, b) => a.pct - b.pct)[0];
+  const vic = [...h2h].sort((a, b) => b.pct - a.pct)[0];
+  return {
+    name, courses: mine.length, moyenne: avg(mine), jour: WEEKDAYS[wd],
+    moyenne_ce_jour: onDay.length >= 5 ? avg(onDay) : null, courses_ce_jour: onDay.length,
+    forme_20: mine.length >= 10 ? avg(mine.slice(-20)) : null,
+    nemesis: nem ? { pilote: nem.opp, devant_pct: Math.round(nem.pct * 100) } : null,
+    victime: vic && vic.opp !== nem?.opp ? { pilote: vic.opp, devant_pct: Math.round(vic.pct * 100) } : null,
+  };
+}
 
-  if (onDay.length >= 5) {
-    lines.push(dayAvg < all - 0.08
-      ? `Les ${WEEKDAYS[wd]}s te portent : ${fmtAvg(dayAvg)} de moyenne ce jour-là, contre ${fmtAvg(all)} d'habitude.`
-      : dayAvg > all + 0.08
-        ? `Les ${WEEKDAYS[wd]}s te sont contraires (${fmtAvg(dayAvg)} contre ${fmtAvg(all)} d'habitude). Prudence au départ.`
-        : `Un ${WEEKDAYS[wd]} comme les autres pour toi : ${fmtAvg(dayAvg)} de moyenne, pile ta norme.`);
+export type Horoscope = { sign: string; lines: string[]; star: string | null; lucky: number; news?: string | null; ai?: boolean };
+
+/** Horoscope de repli, sans IA : stats + conseils absurdes tirés au sort (stable sur la journée). */
+export function horoscope(name: string, races: Race[], day: string): Horoscope {
+  const seed = seedOf(name + day);
+  const f = horoscopeFacts(name, races, day);
+  const lines: string[] = [];
+  const all = f.moyenne ?? 2.5;
+
+  if (f.moyenne_ce_jour !== null) {
+    const d = f.moyenne_ce_jour;
+    lines.push(d < all - 0.08
+      ? `Les ${f.jour}s te portent (${fmtAvg(d)} de moyenne contre ${fmtAvg(all)}). Jupiter t'a mis en mode 200cc.`
+      : d > all + 0.08
+        ? `Les ${f.jour}s te détestent personnellement (${fmtAvg(d)} contre ${fmtAvg(all)}). Rien de personnel, sauf que si.`
+        : `Un ${f.jour} d'une banalité cosmique : ${fmtAvg(d)} de moyenne, pile ta norme. Les astres baillent.`);
   }
-  if (recent.length >= 10) {
-    lines.push(form < all - 0.15
-      ? `Ta forme monte : ${fmtAvg(form)} sur tes 20 dernières courses. Les astres appuient sur l'accélérateur.`
-      : form > all + 0.15
-        ? `Ta forme tousse (${fmtAvg(form)} sur 20 courses). Une bonne trajectoire peut tout relancer.`
-        : `Forme stable, ${fmtAvg(form)} sur 20 courses. Rien ne t'arrête, rien ne te propulse.`);
+  if (f.forme_20 !== null) {
+    const fm = f.forme_20;
+    lines.push(fm < all - 0.15
+      ? `Ta forme grimpe (${fmtAvg(fm)} sur 20 courses). Vénus pousse ton kart dans le dos, discrètement.`
+      : fm > all + 0.15
+        ? `Ta forme tousse (${fmtAvg(fm)} sur 20 courses). Un dérapage bien senti et c'est reparti, paraît-il.`
+        : `Forme stable, ${fmtAvg(fm)} sur 20 courses : tu es le Wi-Fi de l'open space, ni bon ni mauvais, juste là.`);
   }
-  const star = seed % 2 === 0 ? nemesis?.opp ?? null : victim?.opp ?? null;
-  if (star && nemesis && star === nemesis.opp) lines.push(`Astre menaçant : ${star}. Tu ne finis devant que ${Math.round(nemesis.pct * 100)} % du temps.`);
-  else if (star && victim) lines.push(`Astre favorable : ${star}. Tu finis devant ${Math.round(victim.pct * 100)} % du temps.`);
+  const star = seed % 2 === 0 ? f.nemesis?.pilote ?? null : f.victime?.pilote ?? f.nemesis?.pilote ?? null;
+  if (star && star === f.nemesis?.pilote) lines.push(`Astre menaçant : ${star}. Tu ne finis devant que ${f.nemesis.devant_pct} % du temps. Évite son regard.`);
+  else if (star && f.victime) lines.push(`Astre favorable : ${star}. Tu finis devant ${f.victime.devant_pct} % du temps. Sois magnanime.`);
   lines.push(pick(ADVICE, seed >>> 3));
-  return { sign: pick(SIGNS, seedOf(name)), lines: lines.slice(0, 4), star, lucky: 1 + (seed % 4) };
+  return { sign: pick(SIGNS, seed >>> 5), lines: lines.slice(0, 4), star, lucky: 1 + (seed % 4), ai: false };
 }
 
 // ------------------------------------------------------------ défi du jour
