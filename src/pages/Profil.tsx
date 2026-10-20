@@ -5,6 +5,7 @@ import { clearMyAvatar, uploadMyAvatar } from '../lib/avatars';
 import { getSupabase } from '../lib/supabase';
 import { useStore } from '../store';
 import { href } from '../router';
+import { foundSecrets, SECRETS } from '../lib/secrets';
 
 
 export function CloseSessionButton({ day }: { day: string }) {
@@ -92,7 +93,26 @@ function MyProfile() {
           {msg && <p className="form-msg">{msg}</p>}
         </form>
       </Panel>}
+      <SecretHunter />
     </div>
+  );
+}
+
+/** Compteur des easter eggs trouvés dans ce navigateur, avec un indice pour chacun des autres. */
+function SecretHunter() {
+  const [found] = useState(foundSecrets);
+  return (
+    <Panel hud="purple" title="Chasseur de secrets" aside={<span className="hint"><b className="num" style={{ color: 'var(--white)' }}>{found.length}</b> / {SECRETS.length}</span>}>
+      <div className="stack">
+        <div className="secret-bar" aria-hidden="true"><i style={{ width: `${(found.length / SECRETS.length) * 100}%` }} /></div>
+        <ul className="secret-list">
+          {SECRETS.map((x) => found.includes(x.id)
+            ? <li key={x.id} className="ok"><b>{x.name}</b></li>
+            : <li key={x.id}><b>???</b><span className="hint">{x.hint}</span></li>)}
+        </ul>
+        <span className="hint">{found.length === SECRETS.length ? 'Tout trouvé. Respect.' : 'Les secrets trouvés sont retenus sur cet appareil.'}</span>
+      </div>
+    </Panel>
   );
 }
 

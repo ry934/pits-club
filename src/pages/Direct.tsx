@@ -8,6 +8,7 @@ import { play, Sfx, unlock } from '../lib/sfx';
 import { dayKey, fmtAvg, fmtDay, fmtDuration, fmtTime, ratingAt, sessionState } from '../lib/stats';
 import { SETTINGS } from '../lib/types';
 import { useStore } from '../store';
+import { discover } from '../lib/secrets';
 
 /**
  * Mode direct : écran plein cadre laissé ouvert sur le PC pendant la session, lisible à 3-4 mètres.
@@ -231,13 +232,14 @@ function LiveTop({ state, now, count, sub, sync, onFull, sound, onSound, onDemo 
   sync: { mode: string; checkedAt: Date | null }; onFull: () => void; sound: boolean; onSound: () => void; onDemo?: () => void;
 }) {
   const hh = String(now.getHours()).padStart(2, '0'), mm = String(now.getMinutes()).padStart(2, '0'), ss = String(now.getSeconds()).padStart(2, '0');
+  useEffect(() => { if (hh === '13' && mm === '37') discover('leet'); }, [hh, mm]);
   return (
     <header className="live-top">
       <a className="live-brand" href="#/" title="Retour au paddock"><BrandMark /><span className="brand-name">Pits Club</span></a>
       <span className={`live-pill ${state === 'live' ? 'on' : ''}`}>{state === 'live' ? 'En direct' : 'Hors course'}</span>
       <span className="live-sub">{sub}</span>
       <span className="live-count"><span className="label">Courses</span><b className="num"><CountUp value={count} /></b></span>
-      <span className="live-clock num">{hh}:{mm}<small>:{ss}</small></span>
+      {hh === '13' && mm === '37' ? <span className="live-clock num leet" title="13:37">LEET</span> : <span className="live-clock num">{hh}:{mm}<small>:{ss}</small></span>}
       <span className={`live-sync ${sync.mode}`} title={sync.checkedAt ? `Dernière vérification ${fmtTime(sync.checkedAt)}` : ''}>
         {sync.mode === 'realtime' ? 'Temps réel' : sync.mode === 'polling' ? 'Actualisation auto' : 'Démo'}
       </span>

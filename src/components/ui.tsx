@@ -8,13 +8,25 @@ export function initials(name: string) {
 }
 
 export function Avatar({ name, size = 30 }: { name: string; size?: number }) {
-  const { player } = useStore();
+  const { player, crown } = useStore();
   const p = player(name);
   const [broken, setBroken] = useState(false);
   const photo = p.avatarUrl && !broken;
-  return (
+  const av = (
     <span className={`avatar ${photo ? 'has-photo' : ''}`} style={{ '--c': p.color, width: size, height: size, fontSize: size * 0.4 } as CSSProperties} aria-hidden="true">
       {photo ? <img src={p.avatarUrl} alt="" loading="lazy" onError={() => setBroken(true)} /> : initials(name)}
+    </span>
+  );
+  const mark = name === crown.leader ? 'crown' : name === crown.last ? 'cloud' : null;
+  if (!mark || size < 22) return av;
+  return (
+    <span className={`av-wrap av-${mark}`} style={{ '--s': `${size}px` } as CSSProperties} title={mark === 'crown' ? 'Leader du mois' : 'Lanterne rouge du mois'}>
+      {av}
+      {mark === 'crown' ? (
+        <svg className="av-mark" viewBox="0 0 32 22" aria-hidden="true"><path d="M2 20 L4 6 L11 12 L16 2 L21 12 L28 6 L30 20 Z" /><circle cx="4" cy="5" r="2.2" /><circle cx="16" cy="2.2" r="2.2" /><circle cx="28" cy="5" r="2.2" /></svg>
+      ) : (
+        <svg className="av-mark" viewBox="0 0 36 24" aria-hidden="true"><path d="M9 20a7 7 0 0 1-.6-14A9 9 0 0 1 25 5.5 6.5 6.5 0 0 1 27.5 20Z" /><path className="rain" d="M12 22l-1 2M18 22l-1 2M24 22l-1 2" /></svg>
+      )}
     </span>
   );
 }

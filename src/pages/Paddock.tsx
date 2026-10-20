@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode, useEffect, useMemo, useState } from 'react';
+import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Panel } from '../components/ui';
 import { dailyChallenge, horoscope, nextDeadline, rivalryOfTheDay } from '../lib/daily';
 import { greeting } from '../lib/greeting';
@@ -10,6 +10,7 @@ import { dayKey, fmtDay, fmtDuration, sessionState } from '../lib/stats';
 import { href } from '../router';
 import { useStore } from '../store';
 import { useAuth } from '../auth';
+import { discover, fx } from '../lib/secrets';
 
 export function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(() => new Date());
@@ -39,6 +40,17 @@ function slackText(t: string): ReactNode[] {
 
 /** Paddock : le rituel du jour. Les chiffres détaillés vivent dans Stats. */
 export function Paddock() {
+  const [spin, setSpin] = useState(false);
+  const clicks = useRef({ n: 0, t: 0 });
+  const vanity = () => {
+    const now = Date.now(), c = clicks.current;
+    c.n = now - c.t < 1200 ? c.n + 1 : 1; c.t = now;
+    if (c.n >= 5) {
+      c.n = 0; setSpin(true); window.setTimeout(() => setSpin(false), 1600);
+      fx({ type: 'toast', text: 'Oui, oui, tu es très beau. On peut reprendre la course ?' });
+      discover('vanity');
+    }
+  };
   const { races, byDay, dayList, elo, activeNames, player, closedDays } = useStore();
   const { me, session, admin } = useAuth();
   const { settings } = useSettings();
@@ -69,7 +81,7 @@ export function Paddock() {
       <div className="chamfer-frame">
         <section className="hero chamfer me-hero" style={{ '--c': me ? player(me).color : 'var(--cyan)' } as CSSProperties}>
           <span className="speed" aria-hidden="true" />
-          {me && <div className="hero-avatar"><Avatar name={me} size={96} /></div>}
+          {me && <div className={`hero-avatar ${spin ? 'vanity' : ''}`} onClick={vanity}><Avatar name={me} size={96} /></div>}
           <div className="hero-body">
             <span className="label cyan">{me ? 'Ton paddock' : 'Le paddock'} · {fmtDay(today, false)}</span>
             {hello ? <p className="me-hello">{hello}</p> : <p className="me-hello">Bienvenue au paddock. Les chiffres sont dans Stats, les paris dans Takes.</p>}

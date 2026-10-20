@@ -6,6 +6,7 @@ import { Profil } from './pages/Profil';
 import { Direct } from './pages/Direct';
 import { Admin } from './pages/Admin';
 import { useRoute } from './router';
+import { Fx } from './components/Fx';
 import { StoreProvider, useStore } from './store';
 import { AuthProvider, useAuth } from './auth';
 import { BannedScreen, GateLoading, LoginScreen, Onboarding } from './pages/Gate';
@@ -64,7 +65,7 @@ function Shell() {
   const legacy = STATS_TABS[raw0];
   const [raw, a, b, c] = legacy ? ['stats', legacy, ...rest] : [raw0, ...rest];
   const page = ALIASES[raw] ?? raw;
-  if (page === 'direct' && races.length > 0) return <Direct />;
+  if (page === 'direct' && races.length > 0) return <><Direct /><Fx /></>;
   const section = page;
   let body;
   if (races.length === 0 && page !== 'profil' && page !== 'admin') body = <Waiting />;
@@ -106,9 +107,13 @@ function Shell() {
             <MeButton compact />
           </div>
         </header>
-        <main className="content">{body}</main>
+        <main className="content" key={`${page}/${page === 'stats' ? a ?? '' : ''}`}>
+          <span className="route-swoosh" aria-hidden="true" />
+          <div className="route-in">{body}</div>
+        </main>
       </div>
       <nav className="bottomnav" aria-label="Sections">{navLinks('')}</nav>
+      <Fx />
     </div>
   );
 }

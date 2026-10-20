@@ -2,7 +2,7 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useSt
 import { isLive, loadDataset } from './lib/data';
 import { getSupabase } from './lib/supabase';
 import { BadgeBook, computeBadges } from './lib/badges';
-import { allRuns, computeElo, EloResult, groupByDay, lastSeenMap, PlayerDay, playerDays, Run } from './lib/stats';
+import { allRuns, computeElo, EloResult, groupByDay, lastSeenMap, PlayerDay, playerDays, Run, standings } from './lib/stats';
 import { Dataset, Player, Race } from './lib/types';
 
 export type Store = Dataset & {
@@ -15,6 +15,8 @@ export type Store = Dataset & {
   lastSeen: Map<string, string>;
   player: (name: string) => Player;
   activeNames: string[];
+  /** Leader et lanterne rouge du mois en cours (10 courses minimum) : couronne et nuage sur leur avatar. */
+  crown: { leader: string | null; last: string | null };
   reload: () => void;
   /** Mise à jour automatique : 'realtime' (poussée par la base), 'polling' (vérification régulière) ou 'off' (démo). */
   sync: { mode: 'realtime' | 'polling' | 'off'; checkedAt: Date | null };
@@ -102,6 +104,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lastSeen,
       player: (name) => known.get(name) ?? fallback(name),
       activeNames: players.filter((p) => p.active && p.name !== 'Other' && lastSeen.has(p.name)).map((p) => p.name),
+      crown: (() => {
+        const month = [...byDay.keys()].at(-1)?.slice(0, 7);
+        const active = new Set(players.filter((p) => p.active && p.name !== 'Other').map((p) => p.name));
+        const t = month ? standings(races.filter((r) => r.day.startsWith(month))).filter((x) => x.races >= 10 && active.has(x.name)) : [];
+        return { leader: t[0]?.name ?? null, last: t.length >= 3 ? t.at(-1)!.name : null };
+      })(),
       reload: () => setTick((t) => t + 1),
     };
   }, [ds]);

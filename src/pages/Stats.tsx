@@ -15,6 +15,8 @@ import {
 } from '../lib/stats';
 import { Race } from '../lib/types';
 import { href } from '../router';
+import { currentSeason } from '../lib/season';
+import { discover, fx } from '../lib/secrets';
 
 type Tab = 'classement' | 'pilote' | 'session' | 'duels' | 'records';
 const TABS: { key: Tab; label: string }[] = [
@@ -167,7 +169,7 @@ function Lexique() {
           <p className="hint">Exemple : 2,10 sur les 10 dernières courses contre 2,45 avant, soit +0,35 : « en progression ». Il faut au moins {TREND_RECENT + 10} courses pour afficher une tendance. Sous 0,25 place, l'écart vient le plus souvent du hasard d'une petite série.</p>
         </section>
         <section id="lex-hasard">
-          <h3>Hasard 2,5</h3>
+          <h3 onClick={(e) => { if (e.detail === 3) { fx({ type: 'dice' }); discover('dice'); } }} style={{ cursor: 'default', userSelect: 'none' }}>Hasard 2,5</h3>
           <p>C'est la position moyenne qu'obtiendrait un pilote si les places de chaque course étaient <b>tirées au sort</b> : une chance sur quatre d'être 1er, 2e, 3e ou 4e, soit (1 + 2 + 3 + 4) ÷ 4 = <b>2,5</b>.</p>
           <p>À gauche de la ligne pointillée (au-dessus de 2,5), un pilote fait moins bien que le hasard ; à droite (en dessous de 2,5), il fait mieux. Même idée pour les pourcentages de la fiche : 25 % de victoires, 50 % de top 2 et 25 % de dernières places, c'est ce que donnerait le tirage au sort.</p>
         </section>
@@ -237,7 +239,9 @@ function Classement() {
   const { eff, prev, cur, prevRaces, endDay, startDay, bar } = usePeriod();
   const [activeOnly, setActiveOnly] = useState<boolean>(() => readPref('mk.activeOnly', true));
   const rows = useMemo(() => rankedWithEvolution(standings(cur), prevRaces ? standings(prevRaces) : null), [cur, prevRaces]);
-  const shown = rows.filter((r) => (!activeOnly || player(r.name).active) && r.name !== 'Other');
+  const filtered = rows.filter((r) => (!activeOnly || player(r.name).active) && r.name !== 'Other');
+  const april = currentSeason() === 'avril';
+  const shown = april ? [...filtered].reverse() : filtered;
   const pick = (n: string) => { window.location.hash = href('stats', 'pilote', n); };
 
   return (
@@ -249,10 +253,11 @@ function Classement() {
         </label>,
       )}
 
+      {april && <Panel hud="yellow"><b>Poisson d'avril.</b> <span className="muted">Aujourd'hui, le classement se lit à l'envers. Le dernier n'a jamais été aussi fier.</span></Panel>}
       <Section title={`Classement · ${eff.label}`}>
         {shown.length === 0 ? <Empty>Aucune course sur cette période.</Empty> : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table classement-table">
               <thead>
                 <tr>
                   <th>#</th><th className="hide-sm"></th><th>Pilote</th><th className="r">Moy.</th>
