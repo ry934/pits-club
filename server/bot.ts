@@ -167,17 +167,18 @@ export async function POST(req: Request): Promise<Response> {
     const sbHeaders = { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` };
     const [meRes, plRes] = await Promise.all([
       fetch(`${SB_URL()}/rest/v1/players?select=name&user_id=eq.${user.id}`, { headers: sbHeaders }),
-      fetch(`${SB_URL()}/rest/v1/players?select=name,display_name,active&name=neq.Other`, { headers: sbHeaders }),
+      fetch(`${SB_URL()}/rest/v1/players?select=name,display_name,active,aliases&name=neq.Other&active=eq.true`, { headers: sbHeaders }),
     ]);
     const me = ((await meRes.json()) as { name: string }[])[0]?.name;
     if (!me) return json({ ok: false, reason: 'Seuls les pilotes peuvent poster un Take.' });
-    const players = ((await plRes.json()) as { name: string; display_name: string | null; active: boolean }[]);
-    const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name }));
+    const players = ((await plRes.json()) as { name: string; display_name: string | null; active: boolean; aliases?: string[] | null }[]);
+    const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name, aliases: p.aliases ?? [] }));
+    const aliasMap = Object.fromEntries(list.map((p) => [p.name, [p.display, ...p.aliases]]));
     try {
       const { system, user: u } = takePrompt(text, me, list);
       const out = firstJson(await ai(PARSE_CHAIN, system, u, 300, true)) as { ok?: boolean; rule?: unknown; label?: string; reason?: string } | null;
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
-      const rule = validateRule(out.rule, list.map((p) => p.name));
+      const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
       if (!rule) return json({ ok: false, reason: 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
       return json({ ok: true, rule, label: ruleLabel(rule) });
     } catch (e) {

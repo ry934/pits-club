@@ -549,8 +549,13 @@ function cleanStory(s) {
   return t.length >= 40 && t.length <= 900 ? t : null;
 }
 function takePrompt(text, author, players) {
+  const who = players.map((p) => {
+    const other = [.../* @__PURE__ */ new Set([p.display, ...p.aliases ?? []])].filter((x) => x && x.toLowerCase() !== p.name.toLowerCase());
+    return other.length ? `${p.name} (aussi appel\xE9 : ${other.join(", ")})` : p.name;
+  });
   const system = [
     "Tu convertis le pronostic (\xAB Take \xBB) d'un joueur de Mario Kart en r\xE8gle v\xE9rifiable sur les r\xE9sultats de la session du jour.",
+    "Les Takes sont \xE9crits entre coll\xE8gues, en langage familier, avec humour, chambrage, argot et fautes de frappe. Sois ouvert : cherche l'intention comp\xE9titive derri\xE8re la formule et traduis-la par la r\xE8gle la plus proche.",
     "R\xE9ponds uniquement avec un objet JSON, sans texte autour.",
     'R\xE8gles possibles (champ "kind") :',
     '- {"kind":"duel","a":X,"b":Y} : X termine la journ\xE9e avec une meilleure moyenne que Y',
@@ -561,21 +566,35 @@ function takePrompt(text, author, players) {
     '- {"kind":"best-of-day","p":X} : X termine avec la meilleure moyenne du jour',
     `- {"kind":"win-streak","p":X,"n":entier} : X encha\xEEne au moins n victoires d'affil\xE9e`,
     '- {"kind":"volume","n":entier} : au moins n courses jou\xE9es dans la session',
-    "La moyenne est la place moyenne (1 = toujours premier, 4 = toujours dernier). \xAB Finir devant \xBB quelqu'un = duel.",
-    `Les pilotes (nom exact, puis pseudo) : ${players.map((p) => p.display !== p.name ? `${p.name} (alias ${p.display})` : p.name).join(", ")}.`,
-    `L'auteur du Take est ${author} : \xAB je \xBB, \xAB moi \xBB d\xE9signent ${author}.`,
-    "Utilise toujours le nom exact du pilote, jamais l'alias.",
+    "La moyenne est la place moyenne (1 = toujours premier, 4 = toujours dernier).",
+    "Exemples d'interpr\xE9tation :",
+    "- \xAB X va botter le cul de Y \xBB, \xAB X va \xE9clater / d\xE9foncer / humilier Y \xBB, \xAB Y va manger la poussi\xE8re de X \xBB, \xAB X > Y \xBB \u2192 duel a=X, b=Y",
+    "- \xAB X va tout rafler \xBB, \xAB X roi du jour \xBB, \xAB personne ne battra X \xBB, \xAB X va dominer \xBB \u2192 best-of-day X",
+    "- \xAB X va se prendre une racl\xE9e \xBB, \xAB X va faire le plein de bananes \xBB, \xAB X va finir dans les choux \xBB \u2192 avg-worse X, x=2.8",
+    "- \xAB X va gratter une victoire \xBB, \xAB X va enfin gagner \xBB \u2192 wins-min X, n=1 ; \xAB X va gagner 3 courses \xBB \u2192 wins-min X, n=3",
+    "- \xAB X z\xE9ro victoire \xBB, \xAB X ne verra pas le podium de la premi\xE8re place \xBB \u2192 no-win X",
+    "- \xAB X va \xEAtre solide / r\xE9gulier \xBB \u2192 avg-better X, x=2.3",
+    "- \xAB X va encha\xEEner \xBB, \xAB hat-trick de X \xBB \u2192 win-streak X, n=2 (n=3 pour hat-trick)",
+    "- \xAB grosse session \xBB, \xAB on va jouer jusqu'\xE0 pas d'heure \xBB \u2192 volume n=12",
+    `Les pilotes (nom exact, puis pr\xE9noms et surnoms) : ${who.join(" ; ")}.`,
+    "Reconnais les pilotes par n'importe lequel de ces noms, sans tenir compte des majuscules, des accents ni des fautes l\xE9g\xE8res. Dans la r\xE8gle, utilise toujours le nom exact (le premier).",
+    `L'auteur du Take est ${author} : \xAB je \xBB, \xAB moi \xBB, \xAB me \xBB d\xE9signent ${author}.`,
     'Format de r\xE9ponse : {"ok":true,"rule":{...},"label":"reformulation courte et neutre en fran\xE7ais"}',
-    'Si le Take ne peut pas se traduire par une de ces r\xE8gles (trop vague, hors du jeu, plusieurs conditions, subjectif), r\xE9ponds {"ok":false,"reason":"explication courte en fran\xE7ais, avec une suggestion de reformulation"}.'
+    'Refuse seulement si le Take ne parle pas de la comp\xE9tition du jour (m\xE9t\xE9o, travail, vie priv\xE9e\u2026), ne cite aucun pilote identifiable quand il en faut un, ou combine plusieurs conditions impossibles \xE0 ramener \xE0 une seule r\xE8gle : r\xE9ponds alors {"ok":false,"reason":"explication courte en fran\xE7ais, avec une suggestion de reformulation"}.'
   ].join("\n");
   return { system, user: text };
 }
-function validateRule(raw, names) {
+function validateRule(raw, names, aliases = {}) {
   if (!raw || typeof raw !== "object") return null;
   const r = raw;
   const kinds = RULE_KINDS.map((k) => k.kind);
   if (typeof r.kind !== "string" || !kinds.includes(r.kind)) return null;
-  const nm = (v) => typeof v === "string" ? names.find((n) => n.toLowerCase() === v.trim().toLowerCase()) ?? null : null;
+  const fold = (x) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  const nm = (v) => {
+    if (typeof v !== "string") return null;
+    const k = fold(v);
+    return names.find((n) => fold(n) === k) ?? names.find((n) => (aliases[n] ?? []).some((a) => fold(a) === k)) ?? null;
+  };
   const int = (v, lo, hi) => typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : null;
   const num = (v) => typeof v === "number" && v > 1 && v < 4 ? Math.round(v * 100) / 100 : null;
   switch (r.kind) {
@@ -746,17 +765,18 @@ async function POST(req) {
     const sbHeaders = { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` };
     const [meRes, plRes] = await Promise.all([
       fetch(`${SB_URL()}/rest/v1/players?select=name&user_id=eq.${user.id}`, { headers: sbHeaders }),
-      fetch(`${SB_URL()}/rest/v1/players?select=name,display_name,active&name=neq.Other`, { headers: sbHeaders })
+      fetch(`${SB_URL()}/rest/v1/players?select=name,display_name,active,aliases&name=neq.Other&active=eq.true`, { headers: sbHeaders })
     ]);
     const me = (await meRes.json())[0]?.name;
     if (!me) return json({ ok: false, reason: "Seuls les pilotes peuvent poster un Take." });
     const players = await plRes.json();
-    const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name }));
+    const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name, aliases: p.aliases ?? [] }));
+    const aliasMap = Object.fromEntries(list.map((p) => [p.name, [p.display, ...p.aliases]]));
     try {
       const { system, user: u } = takePrompt(text, me, list);
       const out = firstJson(await ai(PARSE_CHAIN, system, u, 300, true));
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
-      const rule = validateRule(out.rule, list.map((p) => p.name));
+      const rule = validateRule(out.rule, list.map((p) => p.name), aliasMap);
       if (!rule) return json({ ok: false, reason: "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
       return json({ ok: true, rule, label: ruleLabel(rule) });
     } catch (e) {

@@ -96,9 +96,16 @@ export function cleanStory(s: string): string | null {
 
 // ------------------------------------------------------------------ Takes en texte libre
 
-export function takePrompt(text: string, author: string, players: { name: string; display: string }[]): { system: string; user: string } {
+export type TakePlayer = { name: string; display: string; aliases?: string[] };
+
+export function takePrompt(text: string, author: string, players: TakePlayer[]): { system: string; user: string } {
+  const who = players.map((p) => {
+    const other = [...new Set([p.display, ...(p.aliases ?? [])])].filter((x) => x && x.toLowerCase() !== p.name.toLowerCase());
+    return other.length ? `${p.name} (aussi appelé : ${other.join(', ')})` : p.name;
+  });
   const system = [
     "Tu convertis le pronostic (« Take ») d'un joueur de Mario Kart en règle vérifiable sur les résultats de la session du jour.",
+    "Les Takes sont écrits entre collègues, en langage familier, avec humour, chambrage, argot et fautes de frappe. Sois ouvert : cherche l'intention compétitive derrière la formule et traduis-la par la règle la plus proche.",
     'Réponds uniquement avec un objet JSON, sans texte autour.',
     'Règles possibles (champ "kind") :',
     '- {"kind":"duel","a":X,"b":Y} : X termine la journée avec une meilleure moyenne que Y',
@@ -109,23 +116,37 @@ export function takePrompt(text: string, author: string, players: { name: string
     '- {"kind":"best-of-day","p":X} : X termine avec la meilleure moyenne du jour',
     '- {"kind":"win-streak","p":X,"n":entier} : X enchaîne au moins n victoires d\'affilée',
     '- {"kind":"volume","n":entier} : au moins n courses jouées dans la session',
-    'La moyenne est la place moyenne (1 = toujours premier, 4 = toujours dernier). « Finir devant » quelqu\'un = duel.',
-    `Les pilotes (nom exact, puis pseudo) : ${players.map((p) => (p.display !== p.name ? `${p.name} (alias ${p.display})` : p.name)).join(', ')}.`,
-    `L'auteur du Take est ${author} : « je », « moi » désignent ${author}.`,
-    'Utilise toujours le nom exact du pilote, jamais l\'alias.',
+    'La moyenne est la place moyenne (1 = toujours premier, 4 = toujours dernier).',
+    'Exemples d\'interprétation :',
+    '- « X va botter le cul de Y », « X va éclater / défoncer / humilier Y », « Y va manger la poussière de X », « X > Y » → duel a=X, b=Y',
+    '- « X va tout rafler », « X roi du jour », « personne ne battra X », « X va dominer » → best-of-day X',
+    '- « X va se prendre une raclée », « X va faire le plein de bananes », « X va finir dans les choux » → avg-worse X, x=2.8',
+    '- « X va gratter une victoire », « X va enfin gagner » → wins-min X, n=1 ; « X va gagner 3 courses » → wins-min X, n=3',
+    '- « X zéro victoire », « X ne verra pas le podium de la première place » → no-win X',
+    '- « X va être solide / régulier » → avg-better X, x=2.3',
+    '- « X va enchaîner », « hat-trick de X » → win-streak X, n=2 (n=3 pour hat-trick)',
+    '- « grosse session », « on va jouer jusqu\'à pas d\'heure » → volume n=12',
+    `Les pilotes (nom exact, puis prénoms et surnoms) : ${who.join(' ; ')}.`,
+    'Reconnais les pilotes par n\'importe lequel de ces noms, sans tenir compte des majuscules, des accents ni des fautes légères. Dans la règle, utilise toujours le nom exact (le premier).',
+    `L'auteur du Take est ${author} : « je », « moi », « me » désignent ${author}.`,
     'Format de réponse : {"ok":true,"rule":{...},"label":"reformulation courte et neutre en français"}',
-    'Si le Take ne peut pas se traduire par une de ces règles (trop vague, hors du jeu, plusieurs conditions, subjectif), réponds {"ok":false,"reason":"explication courte en français, avec une suggestion de reformulation"}.',
+    "Refuse seulement si le Take ne parle pas de la compétition du jour (météo, travail, vie privée…), ne cite aucun pilote identifiable quand il en faut un, ou combine plusieurs conditions impossibles à ramener à une seule règle : réponds alors {\"ok\":false,\"reason\":\"explication courte en français, avec une suggestion de reformulation\"}.",
   ].join('\n');
   return { system, user: text };
 }
 
 /** Vérifie et normalise la règle renvoyée par l'IA. */
-export function validateRule(raw: unknown, names: string[]): TakeRule | null {
+export function validateRule(raw: unknown, names: string[], aliases: Record<string, string[]> = {}): TakeRule | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const kinds = RULE_KINDS.map((k) => k.kind) as string[];
   if (typeof r.kind !== 'string' || !kinds.includes(r.kind)) return null;
-  const nm = (v: unknown) => (typeof v === 'string' ? names.find((n) => n.toLowerCase() === v.trim().toLowerCase()) ?? null : null);
+  const fold = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const nm = (v: unknown) => {
+    if (typeof v !== 'string') return null;
+    const k = fold(v);
+    return names.find((n) => fold(n) === k) ?? names.find((n) => (aliases[n] ?? []).some((a) => fold(a) === k)) ?? null;
+  };
   const int = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : null);
   const num = (v: unknown) => (typeof v === 'number' && v > 1 && v < 4 ? Math.round(v * 100) / 100 : null);
   switch (r.kind) {

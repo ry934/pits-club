@@ -12,6 +12,9 @@ describe('validation des Takes renvoyés par l’IA', () => {
     expect(validateRule({ kind: 'duel', a: 'Paul', b: 'paul' }, names)).toBeNull();
     expect(validateRule({ kind: 'avg-better', p: 'Paul', x: 7 }, names)).toBeNull();
     expect(validateRule({ kind: 'hack', p: 'Paul' }, names)).toBeNull();
+    const al = { Charlie: ['Bill', 'Recops'], Paul: ['Paulito'] };
+    expect(validateRule({ kind: 'duel', a: 'recops', b: 'Paulito' }, names, al)).toEqual({ kind: 'duel', a: 'Charlie', b: 'Paul' });
+    expect(validateRule({ kind: 'no-win', p: 'Bill' }, names, al)).toEqual({ kind: 'no-win', p: 'Charlie' });
   });
   it('extrait le JSON et filtre les récits trop courts', () => {
     expect(firstJson('Voici : {"ok":true} merci')).toEqual({ ok: true });
