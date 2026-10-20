@@ -1,5 +1,5 @@
 import { seedOf } from './takes';
-import { dayKey, fmtAvg, headToHead, lastSeenMap, monthKey, parseLocal, standings, WEEKDAYS } from './stats';
+import { dayKey, fmtAvg, monthKey, parseLocal, recentRivals, standings, WEEKDAYS } from './stats';
 import { Race } from './types';
 
 const pick = <T,>(arr: T[], seed: number) => arr[seed % arr.length];
@@ -29,7 +29,7 @@ const ADVICE = [
 export type HoroscopeFacts = {
   name: string; courses: number; moyenne: number | null; jour: string;
   moyenne_ce_jour: number | null; courses_ce_jour: number;
-  forme_20: number | null; nemesis: { pilote: string; devant_pct: number } | null; victime: { pilote: string; devant_pct: number } | null;
+  forme_20: number | null; rivalites_sur_courses: number; nemesis: { pilote: string; devant_pct: number } | null; victime: { pilote: string; devant_pct: number } | null;
 };
 
 /** Faits chiffrés d'un pilote pour l'horoscope (entrée de l'IA). */
@@ -39,15 +39,15 @@ export function horoscopeFacts(name: string, races: Race[], day: string): Horosc
   const avg = (rs: Race[]) => (rs.length ? Number((rs.reduce((s, r) => s + pos(r), 0) / rs.length).toFixed(2)) : null);
   const wd = parseLocal(day).getDay();
   const onDay = mine.filter((r) => r.ts.getDay() === wd);
-  const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? day).filter((h) => h.shared >= 10);
-  const nem = [...h2h].sort((a, b) => a.pct - b.pct)[0];
-  const vic = [...h2h].sort((a, b) => b.pct - a.pct)[0];
+  // rivalités du moment (dernières courses du pilote), pas tout l'historique
+  const { nemesis: nem, victim: vic, window } = recentRivals(races, name);
   return {
     name, courses: mine.length, moyenne: avg(mine), jour: WEEKDAYS[wd],
     moyenne_ce_jour: onDay.length >= 5 ? avg(onDay) : null, courses_ce_jour: onDay.length,
     forme_20: mine.length >= 10 ? avg(mine.slice(-20)) : null,
+    rivalites_sur_courses: window,
     nemesis: nem ? { pilote: nem.opp, devant_pct: Math.round(nem.pct * 100) } : null,
-    victime: vic && vic.opp !== nem?.opp ? { pilote: vic.opp, devant_pct: Math.round(vic.pct * 100) } : null,
+    victime: vic ? { pilote: vic.opp, devant_pct: Math.round(vic.pct * 100) } : null,
   };
 }
 
@@ -77,8 +77,8 @@ export function horoscope(name: string, races: Race[], day: string): Horoscope {
         : `Forme stable, ${fmtAvg(fm)} sur 20 courses : tu es le Wi-Fi de l'open space, ni bon ni mauvais, juste là.`);
   }
   const star = seed % 2 === 0 ? f.nemesis?.pilote ?? null : f.victime?.pilote ?? f.nemesis?.pilote ?? null;
-  if (star && star === f.nemesis?.pilote) lines.push(`Astre menaçant : ${star}. Tu ne finis devant que ${f.nemesis.devant_pct} % du temps. Évite son regard.`);
-  else if (star && f.victime) lines.push(`Astre favorable : ${star}. Tu finis devant ${f.victime.devant_pct} % du temps. Sois magnanime.`);
+  if (star && star === f.nemesis?.pilote) lines.push(`Astre menaçant : ${star}. Ces derniers temps, tu ne finis devant que ${f.nemesis.devant_pct} % du temps. Évite son regard.`);
+  else if (star && f.victime) lines.push(`Astre favorable : ${star}. Ces derniers temps, tu finis devant ${f.victime.devant_pct} % du temps. Sois magnanime.`);
   lines.push(pick(ADVICE, seed >>> 3));
   return { sign: pick(SIGNS, seed >>> 5), lines: lines.slice(0, 4), star, lucky: 1 + (seed % 4), ai: false };
 }

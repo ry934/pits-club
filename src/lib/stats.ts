@@ -307,6 +307,35 @@ export function headToHead(races: Race[], name: string, lastSeen: Map<string, st
     .sort((a, b) => b.pct - a.pct);
 }
 
+/**
+ * Rivalités du moment : face-à-face calculés sur les N dernières courses du pilote seulement.
+ * Un adversaire qui ne vient plus sort tout seul de la fenêtre ; l'historique complet reste dans headToHead.
+ * Némésis = celui qui finit le plus souvent devant (moins de 50 % de duels gagnés),
+ * victime = celui qu'on bat le plus souvent (plus de 50 %).
+ */
+export type Rivals = { h2h: H2H[]; nemesis: H2H | null; victim: H2H | null; window: number };
+
+export function recentRivals(races: Race[], name: string, window = SETTINGS.rivalryWindow, minShared = SETTINGS.minSharedRecent): Rivals {
+  const mine = races.filter((r) => r.p.includes(name)).slice(-window);
+  const m = new Map<string, { shared: number; ahead: number; lastSeen: string }>();
+  for (const r of mine) {
+    const i = r.p.indexOf(name);
+    r.p.forEach((o, j) => {
+      if (j === i || o === 'Other') return;
+      const s = m.get(o) ?? { shared: 0, ahead: 0, lastSeen: '' };
+      s.shared++; if (i < j) s.ahead++; s.lastSeen = r.day;
+      m.set(o, s);
+    });
+  }
+  const h2h = [...m].map(([opp, s]) => ({ opp, ...s, pct: s.ahead / s.shared }))
+    .filter((h) => h.shared >= minShared)
+    .sort((a, b) => b.pct - a.pct || b.shared - a.shared);
+  const low = [...h2h].sort((a, b) => a.pct - b.pct || b.shared - a.shared)[0];
+  const nemesis = low && low.pct < 0.5 ? low : null;
+  const victim = h2h[0] && h2h[0].pct > 0.5 && h2h[0] !== nemesis ? h2h[0] : null;
+  return { h2h, nemesis, victim, window: mine.length };
+}
+
 export function lastSeenMap(races: Race[]) {
   const m = new Map<string, string>();
   for (const r of races) r.p.forEach((n) => m.set(n, r.day));
@@ -319,7 +348,7 @@ export type PlayerProfile = {
   name: string; all: Standing | null; month: Standing | null; monthLabel: string;
   form: { avg: number; races: number } | null; formDelta: number | null;
   weekdays: { day: number; avg: number; races: number }[];
-  h2h: H2H[]; nemesis: H2H | null; victim: H2H | null;
+  h2h: H2H[]; nemesis: H2H | null; victim: H2H | null; rivalsWindow: number;
   current: Run | null; bestWin: Run | null; bestLast: Run | null;
   bestDay: PlayerDay | null; worstDay: PlayerDay | null; biggestDay: PlayerDay | null;
   rating: number; ratingRank: number; ratingHistory: { day: string; rating: number }[];
@@ -346,6 +375,7 @@ export function playerProfile(
   const weekdays = [1, 2, 3, 4, 5, 6, 0].filter((d) => (wd.get(d)?.n ?? 0) >= SETTINGS.minRacesWeekday)
     .map((d) => ({ day: d, avg: wd.get(d)!.sum / wd.get(d)!.n, races: wd.get(d)!.n }));
   const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? lastDay);
+  const rivals = recentRivals(races, name);
   const myRuns = runs.filter((r) => r.name === name);
   const best = (k: Run['kind']) => myRuns.filter((r) => r.kind === k).sort((a, b) => b.length - a.length || b.start.id - a.start.id)[0] ?? null;
   const current = myRuns.filter((r) => r.ongoing).sort((a, b) => b.length - a.length)[0] ?? null;
@@ -360,8 +390,7 @@ export function playerProfile(
     form: recent.length ? { avg: formAvg, races: recent.length } : null,
     formDelta: all && recent.length >= 10 ? all.avg - formAvg : null,
     weekdays, h2h,
-    nemesis: h2h.length ? [...h2h].sort((a, b) => a.pct - b.pct)[0] : null,
-    victim: h2h.length ? h2h[0] : null,
+    nemesis: rivals.nemesis, victim: rivals.victim, rivalsWindow: rivals.window,
     current: current && current.length >= 2 ? current : null,
     bestWin: best('win'), bestLast: best('last'),
     bestDay: [...eligible].sort((a, b) => a.avg - b.avg || b.races - a.races)[0] ?? null,

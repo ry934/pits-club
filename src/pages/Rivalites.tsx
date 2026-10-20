@@ -3,7 +3,7 @@ import { DuelBars } from '../components/charts';
 import { Avatar, Empty, Panel, PlayerTag, Pos, Section, Stat } from '../components/ui';
 import { href } from '../router';
 import { useStore } from '../store';
-import { duel, fmtAvg, fmtMonth, fmtPct, fmtShort, headToHead } from '../lib/stats';
+import { duel, fmtAvg, fmtMonth, fmtPct, fmtShort, headToHead, recentRivals } from '../lib/stats';
 
 export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) {
   const { races, activeNames, player, elo, lastSeen } = useStore();
@@ -22,15 +22,15 @@ export function Rivalites({ a: aParam, b: bParam }: { a?: string; b?: string }) 
   const avgOf = (ps: number[]) => ps.reduce((s, x) => s + x, 0) / Math.max(1, ps.length);
   const ra = recentOf(a), rb = recentOf(b);
 
-  const indicator = (name: string, list: typeof h2hA) => {
-    const nem = [...list].sort((x, y) => x.pct - y.pct)[0];
-    const vic = list[0];
+  const indicator = (name: string, _list: typeof h2hA) => {
+    // rivalités du moment : dernières courses du pilote, les absents en sortent d'eux-mêmes
+    const { nemesis: nem, victim: vic, window } = recentRivals(races, name);
     return (
-      <Panel title={`Indicateurs · ${name}`}>
+      <Panel title={`Indicateurs · ${name}`} aside={<span className="hint">sur ses {window} dernières courses</span>}>
         <div className="stack">
           {nem && <span>Némésis : <a className="bad" href={href('stats', 'duels', name, nem.opp)}><b>{nem.opp}</b></a> <span className="muted">({fmtPct(nem.pct)} devant)</span></span>}
           {vic && <span>Rival le plus dominé : <a className="good" href={href('stats', 'duels', name, vic.opp)}><b>{vic.opp}</b></a> <span className="muted">({fmtPct(vic.pct)} devant)</span></span>}
-          {!nem && <span className="muted">Pas assez de courses en commun.</span>}
+          {!nem && !vic && <span className="muted">Pas de rivalité marquée sur les dernières courses.</span>}
         </div>
       </Panel>
     );

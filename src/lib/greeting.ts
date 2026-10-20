@@ -1,5 +1,5 @@
 import { seedOf } from './takes';
-import { dayKey, fmtAvg, headToHead, lastSeenMap, monthKey, parseLocal, standings } from './stats';
+import { dayKey, fmtAvg, monthKey, parseLocal, recentRivals, standings } from './stats';
 import { Race } from './types';
 
 /**
@@ -51,7 +51,7 @@ const T: Record<string, ((c: Ctx) => string)[]> = {
   ],
   nemesis: [
     (c) => `Bonjour ${c.n}. ${c.nem} sera peut-être là aujourd'hui. Respire. Ça va bien se passer. Ou pas.`,
-    (c) => `${c.n}, petit rappel : ${c.nem} te colle dans le rétro depuis des mois. Aujourd'hui, c'est le jour. Peut-être.`,
+    (c) => `${c.n}, petit rappel : ${c.nem} te colle dans le rétro ces derniers temps. Aujourd'hui, c'est le jour. Peut-être.`,
     (c) => `Salut ${c.n}. ${c.nem} a demandé si tu jouais ce midi. Ça avait l'air de lui faire très plaisir.`,
   ],
   victim: [
@@ -114,9 +114,8 @@ export function greeting(name: string, display: string, races: Race[], now = new
       if (m.rank === month.length && month.length >= 4) pool.push('bottom', 'bottom');
     }
     // rivalités
-    const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? today);
-    const nem = [...h2h].sort((a, b) => a.pct - b.pct)[0];
-    const vic = h2h[0];
+    // rivalités du moment : sur les dernières courses du pilote
+    const { nemesis: nem, victim: vic } = recentRivals(races, name);
     if (nem && nem.pct < 0.45) { c.nem = nem.opp; pool.push('nemesis'); }
     if (vic && vic.pct > 0.6) { c.vic = vic.opp; pool.push('victim'); }
     if (c.days >= 14) pool.unshift('absent', 'absent', 'absent', 'absent');

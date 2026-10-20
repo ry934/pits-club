@@ -433,10 +433,16 @@ function SheetView({ s, periodLabel, trend, prof, held }: { s: PlayerSheet; peri
       </div>
 
       <Panel title={`Face-à-face · ${p.displayName ?? s.name} contre chaque adversaire`} aside={<span className="hint">Némésis et victime : 10 courses communes minimum</span>}>
+        {prof && (prof.nemesis || prof.victim) && (
+          <div className="h2h-callouts">
+            {prof.nemesis && <span className="bad"><b>Némésis du moment</b> · {player(prof.nemesis.opp).displayName ?? prof.nemesis.opp} finit devant dans {Math.round((1 - prof.nemesis.pct) * 100)} % des duels sur les {prof.rivalsWindow} dernières courses ({prof.nemesis.shared - prof.nemesis.ahead} sur {prof.nemesis.shared})</span>}
+            {prof.victim && <span className="good"><b>Victime du moment</b> · devant {player(prof.victim.opp).displayName ?? prof.victim.opp} dans {Math.round(prof.victim.pct * 100)} % des duels sur les {prof.rivalsWindow} dernières courses ({prof.victim.ahead} sur {prof.victim.shared})</span>}
+          </div>
+        )}
         {(s.nemesis || s.victim) && (
           <div className="h2h-callouts">
-            {s.nemesis && <span className="bad"><b>Némésis</b> · {player(s.nemesis.opp).displayName ?? s.nemesis.opp} finit devant dans {Math.round((1 - s.nemesis.pct) * 100)} % des duels ({s.nemesis.behind} sur {s.nemesis.shared})</span>}
-            {s.victim && <span className="good"><b>Victime favorite</b> · devant {player(s.victim.opp).displayName ?? s.victim.opp} dans {Math.round(s.victim.pct * 100)} % des duels ({s.victim.ahead} sur {s.victim.shared})</span>}
+            {s.nemesis && <span className="bad"><b>Némésis · {periodLabel}</b> · {player(s.nemesis.opp).displayName ?? s.nemesis.opp} finit devant dans {Math.round((1 - s.nemesis.pct) * 100)} % des duels ({s.nemesis.behind} sur {s.nemesis.shared})</span>}
+            {s.victim && <span className="good"><b>Victime favorite · {periodLabel}</b> · devant {player(s.victim.opp).displayName ?? s.victim.opp} dans {Math.round(s.victim.pct * 100)} % des duels ({s.victim.ahead} sur {s.victim.shared})</span>}
           </div>
         )}
         {s.h2h.length === 0 ? <Empty>Pas assez de courses en commun sur cette période.</Empty> : (

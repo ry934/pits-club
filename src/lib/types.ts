@@ -28,6 +28,8 @@ export const SETTINGS = {
   raceMinutes: 2.77,
   minRacesDayRecord: 5,
   minSharedH2H: 10,
+  rivalryWindow: 20,     // rivalités du moment : sur les N dernières courses du pilote
+  minSharedRecent: 6,    // confrontations minimum dans cette fenêtre pour être némésis ou victime
   hideOpponentAfterDays: 60,
   sessionIdleMinutes: 20,
   dedupeSeconds: 60,

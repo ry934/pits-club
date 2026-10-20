@@ -5,6 +5,10 @@ var SETTINGS = {
   raceMinutes: 2.77,
   minRacesDayRecord: 5,
   minSharedH2H: 10,
+  rivalryWindow: 20,
+  // rivalités du moment : sur les N dernières courses du pilote
+  minSharedRecent: 6,
+  // confrontations minimum dans cette fenêtre pour être némésis ou victime
   hideOpponentAfterDays: 60,
   sessionIdleMinutes: 20,
   dedupeSeconds: 60,
@@ -109,26 +113,25 @@ function ratingAt(elo, name, day, strict = false) {
   }
   return v;
 }
-function headToHead(races, name, lastSeen, refDay) {
+function recentRivals(races, name, window = SETTINGS.rivalryWindow, minShared = SETTINGS.minSharedRecent) {
+  const mine = races.filter((r) => r.p.includes(name)).slice(-window);
   const m = /* @__PURE__ */ new Map();
-  for (const r of races) {
+  for (const r of mine) {
     const i = r.p.indexOf(name);
-    if (i < 0) continue;
     r.p.forEach((o, j) => {
-      if (j === i) return;
-      const s = m.get(o) ?? { shared: 0, ahead: 0 };
+      if (j === i || o === "Other") return;
+      const s = m.get(o) ?? { shared: 0, ahead: 0, lastSeen: "" };
       s.shared++;
       if (i < j) s.ahead++;
+      s.lastSeen = r.day;
       m.set(o, s);
     });
   }
-  const limit = parseLocal(refDay).getTime() - SETTINGS.hideOpponentAfterDays * 864e5;
-  return [...m].map(([opp, s]) => ({ opp, ...s, pct: s.ahead / s.shared, lastSeen: lastSeen.get(opp) ?? "" })).filter((h) => h.shared >= SETTINGS.minSharedH2H && parseLocal(h.lastSeen).getTime() >= limit && h.opp !== "Other").sort((a, b) => b.pct - a.pct);
-}
-function lastSeenMap(races) {
-  const m = /* @__PURE__ */ new Map();
-  for (const r of races) r.p.forEach((n) => m.set(n, r.day));
-  return m;
+  const h2h = [...m].map(([opp, s]) => ({ opp, ...s, pct: s.ahead / s.shared })).filter((h) => h.shared >= minShared).sort((a, b) => b.pct - a.pct || b.shared - a.shared);
+  const low = [...h2h].sort((a, b) => a.pct - b.pct || b.shared - a.shared)[0];
+  const nemesis = low && low.pct < 0.5 ? low : null;
+  const victim = h2h[0] && h2h[0].pct > 0.5 && h2h[0] !== nemesis ? h2h[0] : null;
+  return { h2h, nemesis, victim, window: mine.length };
 }
 
 // src/lib/takes.ts
@@ -689,6 +692,7 @@ function horoscopePrompt(day, facts, news, o) {
     "Si la liste d'actus est vide, invente des br\xE8ves manifestement fictives et absurdes (ex. \xAB Un lama nomm\xE9 directeur de la RATP \xBB), jamais cr\xE9dibles.",
     "Dans les phrases, appelle chaque pilote par le nom fourni dans \xAB pilote \xBB.",
     "Glisse au moins une de ses vraies stats (moyenne, forme, jour de la semaine, n\xE9m\xE9sis ou victime) dans une ligne, chiffres exacts tels que fournis. N'invente aucun chiffre.",
+    "\xAB nemesis \xBB et \xAB victime \xBB sont les rivalit\xE9s DU MOMENT, calcul\xE9es sur ses derni\xE8res courses (\xAB rivalites_sur_courses \xBB) : pr\xE9sente-les comme une rivalit\xE9 actuelle, jamais comme une rivalit\xE9 de toujours. Si elles valent null, ne cite aucune n\xE9m\xE9sis ni victime.",
     "Interdits : physique, vie priv\xE9e, travail ou r\xE9sultats de l'entreprise, sujets graves. Sans emoji, sans hashtag. N'accorde pas de genre aux pilotes (\xE9vite il/elle).",
     `Pilotes \xE0 ne pas chambrer (reste doux avec eux) : ${o.optout.map(L).join(", ") || "aucun"}.`,
     "Format de sortie : UNIQUEMENT un JSON :",
@@ -741,9 +745,7 @@ function horoscopeFacts(name, races, day) {
   const avg = (rs) => rs.length ? Number((rs.reduce((s, r) => s + pos(r), 0) / rs.length).toFixed(2)) : null;
   const wd = parseLocal(day).getDay();
   const onDay = mine.filter((r) => r.ts.getDay() === wd);
-  const h2h = headToHead(races, name, lastSeenMap(races), races.at(-1)?.day ?? day).filter((h) => h.shared >= 10);
-  const nem = [...h2h].sort((a, b) => a.pct - b.pct)[0];
-  const vic = [...h2h].sort((a, b) => b.pct - a.pct)[0];
+  const { nemesis: nem, victim: vic, window } = recentRivals(races, name);
   return {
     name,
     courses: mine.length,
@@ -752,8 +754,9 @@ function horoscopeFacts(name, races, day) {
     moyenne_ce_jour: onDay.length >= 5 ? avg(onDay) : null,
     courses_ce_jour: onDay.length,
     forme_20: mine.length >= 10 ? avg(mine.slice(-20)) : null,
+    rivalites_sur_courses: window,
     nemesis: nem ? { pilote: nem.opp, devant_pct: Math.round(nem.pct * 100) } : null,
-    victime: vic && vic.opp !== nem?.opp ? { pilote: vic.opp, devant_pct: Math.round(vic.pct * 100) } : null
+    victime: vic ? { pilote: vic.opp, devant_pct: Math.round(vic.pct * 100) } : null
   };
 }
 
