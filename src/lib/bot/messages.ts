@@ -215,14 +215,14 @@ export function buildDebrief(f: SessionFacts, o: BotOptions, story?: string): Sl
   const narrative = story ?? debriefStory(f, o, used);
   const takes = takesBlock(c, used);
   const close = pick(CLOSE, c, 'close', used);
-  const url = `${o.appUrl}/#/session/${f.day}`;
+  const url = `${o.appUrl}/#/stats/session/${f.day}`;
   const text = [narrative, recap(c), takes, `${close} ${url}`].filter(Boolean).join('\n\n');
   const blocks = [
     section(narrative),
     section(recap(c)),
     ...(takes ? [section(takes)] : []),
     section(close ?? ''),
-    ...linkBlocks(url, 'Ouvrir le paddock', 'Pits Club · débrief automatique'),
+    ...linkBlocks(url, 'Voir les stats de la session', 'Pits Club · débrief automatique'),
   ];
   return { text, blocks, meta: { kind: 'debrief', ids: used, pen: story ? 'ai' : 'library' } };
 }
@@ -240,10 +240,10 @@ export function buildExtra(f: SessionFacts, o: BotOptions): SlackMessage {
   const used: string[] = [];
   const c = ctxOf(f, o);
   const head = pick(EXTRA, c, 'extra' + f.races, used) ?? '';
-  const url = `${o.appUrl}/#/session/${f.day}`;
+  const url = `${o.appUrl}/#/stats/session/${f.day}`;
   return {
     text: `${head}\n\n${recap(c)}\n\n${url}`,
-    blocks: [section(head), section(recap(c)), ...linkBlocks(url, 'Ouvrir le paddock', 'Pits Club · prolongations')],
+    blocks: [section(head), section(recap(c)), ...linkBlocks(url, 'Voir les stats de la session', 'Pits Club · prolongations')],
     meta: { kind: 'extra', ids: used, pen: 'library' },
   };
 }

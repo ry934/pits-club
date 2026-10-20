@@ -23,7 +23,7 @@ describe('bot Slack', () => {
       const f = sessionFacts(day, races, elo, takes)!;
       for (const tone of ['sobre', 'taquin', 'piquant'] as const) {
         const m = buildDebrief(f, opts(tone));
-        expect(m.text).toContain(`/#/session/${day}`);
+        expect(m.text).toContain(`/#/stats/session/${day}`);
         expect(m.text).toContain('Classement du jour');
         expect(m.text).not.toMatch(/undefined|NaN|null/);
         if (tone === 'sobre') expect(m.meta.ids.some((id) => id.startsWith('f-'))).toBe(false);

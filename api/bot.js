@@ -435,14 +435,14 @@ function buildDebrief(f, o, story) {
   const narrative = story ?? debriefStory(f, o, used);
   const takes = takesBlock(c, used);
   const close = pick(CLOSE, c, "close", used);
-  const url = `${o.appUrl}/#/session/${f.day}`;
+  const url = `${o.appUrl}/#/stats/session/${f.day}`;
   const text = [narrative, recap(c), takes, `${close} ${url}`].filter(Boolean).join("\n\n");
   const blocks = [
     section(narrative),
     section(recap(c)),
     ...takes ? [section(takes)] : [],
     section(close ?? ""),
-    ...linkBlocks(url, "Ouvrir le paddock", "Pits Club \xB7 d\xE9brief automatique")
+    ...linkBlocks(url, "Voir les stats de la session", "Pits Club \xB7 d\xE9brief automatique")
   ];
   return { text, blocks, meta: { kind: "debrief", ids: used, pen: story ? "ai" : "library" } };
 }
@@ -456,14 +456,14 @@ function buildExtra(f, o) {
   const used = [];
   const c = ctxOf(f, o);
   const head = pick(EXTRA, c, "extra" + f.races, used) ?? "";
-  const url = `${o.appUrl}/#/session/${f.day}`;
+  const url = `${o.appUrl}/#/stats/session/${f.day}`;
   return {
     text: `${head}
 
 ${recap(c)}
 
 ${url}`,
-    blocks: [section(head), section(recap(c)), ...linkBlocks(url, "Ouvrir le paddock", "Pits Club \xB7 prolongations")],
+    blocks: [section(head), section(recap(c)), ...linkBlocks(url, "Voir les stats de la session", "Pits Club \xB7 prolongations")],
     meta: { kind: "extra", ids: used, pen: "library" }
   };
 }
