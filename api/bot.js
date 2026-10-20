@@ -665,19 +665,24 @@ async function postSlack(m) {
   if (!r.ok) throw new Error(`Slack : ${r.status} ${(await r.text()).slice(0, 160)}`);
 }
 async function aiStory(p, kind, salt) {
-  if (kind !== "debrief" || p.settings.ai_pen !== true || !aiKey()) return void 0;
+  if (kind !== "debrief" || p.settings.ai_pen !== true) return {};
+  if (!aiKey()) return { aiError: "cl\xE9 absente" };
   const f = factsFrom(p);
-  if (!f) return void 0;
+  if (!f) return { aiError: "pas de donn\xE9es de session" };
   try {
     const { system, user } = aiStoryPrompt(f, optionsFrom(p, salt));
-    return cleanStory(await ai(MODEL_PEN, system, user, 400)) ?? void 0;
-  } catch {
-    return void 0;
+    const raw = await ai(MODEL_PEN, system, user, 400);
+    const story = cleanStory(raw);
+    return story ? { story } : { aiError: `r\xE9cit hors format (${raw.length} caract\xE8res)` };
+  } catch (e) {
+    return { aiError: String(e instanceof Error ? e.message : e).slice(0, 200) };
   }
 }
 async function build(p, kind, salt, revealedOnly = true) {
-  const story = await aiStory(p, kind, salt);
-  return composeMessage(kind, p, { salt, story, revealedOnly });
+  const { story, aiError } = await aiStory(p, kind, salt);
+  const m = composeMessage(kind, p, { salt, story, revealedOnly });
+  if (aiError && !("error" in m)) m.meta = { ...m.meta, ai_error: aiError };
+  return m;
 }
 async function processLog(logId) {
   const secret = env("BOT_SECRET");

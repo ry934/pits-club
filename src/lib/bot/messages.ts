@@ -20,7 +20,7 @@ export type BotOptions = {
   salt?: string;                          // pour forcer un autre tirage (aperçu « autre version »)
 };
 
-export type SlackMessage = { text: string; blocks: unknown[]; meta: { kind: string; ids: string[]; pen: 'library' | 'ai' } };
+export type SlackMessage = { text: string; blocks: unknown[]; meta: { kind: string; ids: string[]; pen: 'library' | 'ai'; ai_error?: string } };
 
 type Ctx = SessionFacts & { o: BotOptions; L: (n: string) => string; roastable: (n: string) => boolean };
 type Variant = { id: string; tones?: BotTone[]; t: (c: Ctx) => string | null };

@@ -77,22 +77,27 @@ async function postSlack(m: SlackMessage): Promise<void> {
   if (!r.ok) throw new Error(`Slack : ${r.status} ${(await r.text()).slice(0, 160)}`);
 }
 
-/** Récit IA si activé et disponible, sinon undefined (la bibliothèque prend le relais). */
-async function aiStory(p: Payload, kind: string, salt?: string): Promise<string | undefined> {
-  if (kind !== 'debrief' || p.settings.ai_pen !== true || !aiKey()) return undefined;
+/** Récit IA si activé et disponible ; sinon story vide (la bibliothèque prend le relais) et la raison dans aiError. */
+async function aiStory(p: Payload, kind: string, salt?: string): Promise<{ story?: string; aiError?: string }> {
+  if (kind !== 'debrief' || p.settings.ai_pen !== true) return {};
+  if (!aiKey()) return { aiError: 'clé absente' };
   const f = factsFrom(p);
-  if (!f) return undefined;
+  if (!f) return { aiError: 'pas de données de session' };
   try {
     const { system, user } = aiStoryPrompt(f, optionsFrom(p, salt));
-    return cleanStory(await ai(MODEL_PEN, system, user, 400)) ?? undefined;
-  } catch {
-    return undefined;
+    const raw = await ai(MODEL_PEN, system, user, 400);
+    const story = cleanStory(raw);
+    return story ? { story } : { aiError: `récit hors format (${raw.length} caractères)` };
+  } catch (e) {
+    return { aiError: String(e instanceof Error ? e.message : e).slice(0, 200) };
   }
 }
 
 async function build(p: Payload, kind: string, salt?: string, revealedOnly = true) {
-  const story = await aiStory(p, kind, salt);
-  return composeMessage(kind, p, { salt, story, revealedOnly });
+  const { story, aiError } = await aiStory(p, kind, salt);
+  const m = composeMessage(kind, p, { salt, story, revealedOnly });
+  if (aiError && !('error' in m)) m.meta = { ...m.meta, ai_error: aiError };
+  return m;
 }
 
 /** Traite une entrée du journal : rédige, poste sur Slack, consigne le résultat. */
