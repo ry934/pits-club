@@ -637,18 +637,27 @@ async function currentUser(jwt) {
   const r = await fetch(`${SB_URL()}/auth/v1/user`, { headers: { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` } });
   return r.ok ? r.json() : null;
 }
-async function claude(model, system, user, maxTokens) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+var aiKey = () => env("GEMINI_API_KEY") || env("GOOGLE_API_KEY") || (env("ANTHROPIC_API_KEY").startsWith("AIza") ? env("ANTHROPIC_API_KEY") : "");
+async function ai(model, system, user, maxTokens, asJson = false) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
-    headers: { "x-api-key": env("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] })
+    headers: { "x-goog-api-key": aiKey(), "content-type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: user }] }],
+      // Marge large : sur les modèles qui « réfléchissent », le raisonnement consomme aussi ce budget.
+      generationConfig: { maxOutputTokens: Math.max(maxTokens * 4, 1024), ...asJson ? { responseMimeType: "application/json" } : {} }
+    })
   });
-  if (!r.ok) throw new Error(`IA : ${r.status} ${(await r.text()).slice(0, 160)}`);
+  if (!r.ok) throw new Error(`IA : ${r.status} ${(await r.text()).slice(0, 200)}`);
   const data = await r.json();
-  return data.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+  const c = data.candidates?.[0];
+  const text = (c?.content?.parts ?? []).filter((x) => !x.thought && x.text).map((x) => x.text).join("").trim();
+  if (!text) throw new Error(`IA : r\xE9ponse vide (${c?.finishReason ?? "aucun candidat"})`);
+  return text;
 }
-var MODEL_PEN = "claude-sonnet-5-5";
-var MODEL_PARSE = "claude-haiku-5-5";
+var MODEL_PEN = env("GEMINI_MODEL_PEN") || "gemini-3.8-flash";
+var MODEL_PARSE = env("GEMINI_MODEL_PARSE") || "gemini-3.5-flash-lite";
 async function postSlack(m) {
   const url = env("SLACK_WEBHOOK_URL");
   if (!url) throw new Error("SLACK_WEBHOOK_URL manquant dans Vercel");
@@ -656,12 +665,12 @@ async function postSlack(m) {
   if (!r.ok) throw new Error(`Slack : ${r.status} ${(await r.text()).slice(0, 160)}`);
 }
 async function aiStory(p, kind, salt) {
-  if (kind !== "debrief" || p.settings.ai_pen !== true || !env("ANTHROPIC_API_KEY")) return void 0;
+  if (kind !== "debrief" || p.settings.ai_pen !== true || !aiKey()) return void 0;
   const f = factsFrom(p);
   if (!f) return void 0;
   try {
     const { system, user } = aiStoryPrompt(f, optionsFrom(p, salt));
-    return cleanStory(await claude(MODEL_PEN, system, user, 400)) ?? void 0;
+    return cleanStory(await ai(MODEL_PEN, system, user, 400)) ?? void 0;
   } catch {
     return void 0;
   }
@@ -710,7 +719,7 @@ async function POST(req) {
   if (action === "parse-take") {
     const text = String(body.text ?? "").trim().slice(0, 280);
     if (text.length < 3) return json({ ok: false, reason: "Ton Take est vide." });
-    if (!env("ANTHROPIC_API_KEY")) return json({ ok: false, unavailable: true, reason: "L'IA n'est pas encore branch\xE9e : ton Take sera arbitr\xE9 \xE0 la main." });
+    if (!aiKey()) return json({ ok: false, unavailable: true, reason: "L'IA n'est pas encore branch\xE9e : ton Take sera arbitr\xE9 \xE0 la main." });
     const sbHeaders = { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` };
     const [meRes, plRes] = await Promise.all([
       fetch(`${SB_URL()}/rest/v1/players?select=name&user_id=eq.${user.id}`, { headers: sbHeaders }),
@@ -722,7 +731,7 @@ async function POST(req) {
     const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name }));
     try {
       const { system, user: u } = takePrompt(text, me, list);
-      const out = firstJson(await claude(MODEL_PARSE, system, u, 300));
+      const out = firstJson(await ai(MODEL_PARSE, system, u, 300, true));
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
       const rule = validateRule(out.rule, list.map((p) => p.name));
       if (!rule) return json({ ok: false, reason: "Take impossible \xE0 v\xE9rifier automatiquement. Essaie une formulation plus pr\xE9cise." });
@@ -736,7 +745,17 @@ async function POST(req) {
   if (action === "status") {
     let secretOk = false;
     if (env("BOT_SECRET")) secretOk = await rpc("bot_payload", { secret: env("BOT_SECRET"), p_log: null, p_day: null }).then(() => true, () => false);
-    return json({ slack: !!env("SLACK_WEBHOOK_URL"), ai: !!env("ANTHROPIC_API_KEY"), secret: secretOk });
+    let aiOk = false;
+    let aiError = aiKey() ? null : "cl\xE9 absente";
+    if (aiKey()) {
+      try {
+        await ai(MODEL_PARSE, "R\xE9ponds uniquement OK.", "Test", 5);
+        aiOk = true;
+      } catch (e) {
+        aiError = String(e instanceof Error ? e.message : e).slice(0, 200);
+      }
+    }
+    return json({ slack: !!env("SLACK_WEBHOOK_URL"), ai: aiOk, aiError, secret: secretOk });
   }
   const kind = String(body.kind ?? "debrief");
   if (!["debrief", "extra", "reminder", "test"].includes(kind)) return json({ error: "type inconnu" }, 400);

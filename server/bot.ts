@@ -10,7 +10,8 @@
  *   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY  (déjà présentes)
  *   BOT_SECRET          secret affiché par le script SQL 006
  *   SLACK_WEBHOOK_URL   adresse du webhook Slack du canal dédié
- *   ANTHROPIC_API_KEY   (facultatif) Takes en texte libre et plume IA
+ *   GEMINI_API_KEY      (facultatif) Takes en texte libre et plume IA (clé Google AI Studio, commence par « AIza »)
+ *   GEMINI_MODEL_PEN, GEMINI_MODEL_PARSE  (facultatif) pour changer de modèle sans toucher au code
  */
 import {
   aiStoryPrompt, cleanStory, composeMessage, factsFrom, firstJson, optionsFrom, Payload, takePrompt, validateRule,
@@ -42,19 +43,32 @@ async function currentUser(jwt: string): Promise<{ id: string } | null> {
   return r.ok ? r.json() : null;
 }
 
-async function claude(model: string, system: string, user: string, maxTokens: number): Promise<string> {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+/**
+ * Clé Gemini. Par tolérance, une clé Google (« AIza… ») collée par erreur dans ANTHROPIC_API_KEY est aussi acceptée.
+ */
+const aiKey = () => env('GEMINI_API_KEY') || env('GOOGLE_API_KEY') || (env('ANTHROPIC_API_KEY').startsWith('AIza') ? env('ANTHROPIC_API_KEY') : '');
+
+async function ai(model: string, system: string, user: string, maxTokens: number, asJson = false): Promise<string> {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
-    headers: { 'x-api-key': env('ANTHROPIC_API_KEY'), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+    headers: { 'x-goog-api-key': aiKey(), 'content-type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      // Marge large : sur les modèles qui « réfléchissent », le raisonnement consomme aussi ce budget.
+      generationConfig: { maxOutputTokens: Math.max(maxTokens * 4, 1024), ...(asJson ? { responseMimeType: 'application/json' } : {}) },
+    }),
   });
-  if (!r.ok) throw new Error(`IA : ${r.status} ${(await r.text()).slice(0, 160)}`);
-  const data = await r.json() as { content: { type: string; text?: string }[] };
-  return data.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
+  if (!r.ok) throw new Error(`IA : ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const data = await r.json() as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[] };
+  const c = data.candidates?.[0];
+  const text = (c?.content?.parts ?? []).filter((x) => !x.thought && x.text).map((x) => x.text).join('').trim();
+  if (!text) throw new Error(`IA : réponse vide (${c?.finishReason ?? 'aucun candidat'})`);
+  return text;
 }
 
-const MODEL_PEN = 'claude-sonnet-5-5';
-const MODEL_PARSE = 'claude-haiku-5-5';
+const MODEL_PEN = env('GEMINI_MODEL_PEN') || 'gemini-3.8-flash';
+const MODEL_PARSE = env('GEMINI_MODEL_PARSE') || 'gemini-3.5-flash-lite';
 
 async function postSlack(m: SlackMessage): Promise<void> {
   const url = env('SLACK_WEBHOOK_URL');
@@ -65,12 +79,12 @@ async function postSlack(m: SlackMessage): Promise<void> {
 
 /** Récit IA si activé et disponible, sinon undefined (la bibliothèque prend le relais). */
 async function aiStory(p: Payload, kind: string, salt?: string): Promise<string | undefined> {
-  if (kind !== 'debrief' || p.settings.ai_pen !== true || !env('ANTHROPIC_API_KEY')) return undefined;
+  if (kind !== 'debrief' || p.settings.ai_pen !== true || !aiKey()) return undefined;
   const f = factsFrom(p);
   if (!f) return undefined;
   try {
     const { system, user } = aiStoryPrompt(f, optionsFrom(p, salt));
-    return cleanStory(await claude(MODEL_PEN, system, user, 400)) ?? undefined;
+    return cleanStory(await ai(MODEL_PEN, system, user, 400)) ?? undefined;
   } catch {
     return undefined;
   }
@@ -124,7 +138,7 @@ export async function POST(req: Request): Promise<Response> {
   if (action === 'parse-take') {
     const text = String(body.text ?? '').trim().slice(0, 280);
     if (text.length < 3) return json({ ok: false, reason: 'Ton Take est vide.' });
-    if (!env('ANTHROPIC_API_KEY')) return json({ ok: false, unavailable: true, reason: "L'IA n'est pas encore branchée : ton Take sera arbitré à la main." });
+    if (!aiKey()) return json({ ok: false, unavailable: true, reason: "L'IA n'est pas encore branchée : ton Take sera arbitré à la main." });
     const sbHeaders = { apikey: SB_KEY(), Authorization: `Bearer ${jwt}` };
     const [meRes, plRes] = await Promise.all([
       fetch(`${SB_URL()}/rest/v1/players?select=name&user_id=eq.${user.id}`, { headers: sbHeaders }),
@@ -136,7 +150,7 @@ export async function POST(req: Request): Promise<Response> {
     const list = players.map((p) => ({ name: p.name, display: p.display_name || p.name }));
     try {
       const { system, user: u } = takePrompt(text, me, list);
-      const out = firstJson(await claude(MODEL_PARSE, system, u, 300)) as { ok?: boolean; rule?: unknown; label?: string; reason?: string } | null;
+      const out = firstJson(await ai(MODEL_PARSE, system, u, 300, true)) as { ok?: boolean; rule?: unknown; label?: string; reason?: string } | null;
       if (!out?.ok) return json({ ok: false, reason: out?.reason ?? 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
       const rule = validateRule(out.rule, list.map((p) => p.name));
       if (!rule) return json({ ok: false, reason: 'Take impossible à vérifier automatiquement. Essaie une formulation plus précise.' });
@@ -153,7 +167,14 @@ export async function POST(req: Request): Promise<Response> {
   if (action === 'status') {
     let secretOk = false;
     if (env('BOT_SECRET')) secretOk = await rpc('bot_payload', { secret: env('BOT_SECRET'), p_log: null, p_day: null }).then(() => true, () => false);
-    return json({ slack: !!env('SLACK_WEBHOOK_URL'), ai: !!env('ANTHROPIC_API_KEY'), secret: secretOk });
+    // Vrai appel test : une clé présente mais refusée ne doit plus afficher « branchée ».
+    let aiOk = false;
+    let aiError: string | null = aiKey() ? null : 'clé absente';
+    if (aiKey()) {
+      try { await ai(MODEL_PARSE, 'Réponds uniquement OK.', 'Test', 5); aiOk = true; }
+      catch (e) { aiError = String(e instanceof Error ? e.message : e).slice(0, 200); }
+    }
+    return json({ slack: !!env('SLACK_WEBHOOK_URL'), ai: aiOk, aiError, secret: secretOk });
   }
 
   const kind = String(body.kind ?? 'debrief');

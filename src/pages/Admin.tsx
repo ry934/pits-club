@@ -16,7 +16,7 @@ import { useStore } from '../store';
 
 type LogRow = { id: number; kind: string; day: string; status: string; body: string | null; error: string | null; manual: boolean; created_at: string; sent_at: string | null; meta: { ids?: string[]; pen?: string } | null };
 type AdminTake = LiveTake & { day: string };
-type Status = { slack: boolean; ai: boolean; secret: boolean } | null;
+type Status = { slack: boolean; ai: boolean; aiError?: string | null; secret: boolean } | null;
 
 const KIND_LABEL: Record<string, string> = { debrief: 'Débrief', extra: 'Prolongations', reminder: 'Rappel Takes', test: 'Test' };
 const STATUS_LABEL: Record<string, string> = { sent: 'Envoyé', failed: 'Échec', skipped: 'Non envoyé', pending: 'En cours' };
@@ -57,7 +57,7 @@ export function Admin() {
       id: t.id, day: t.day, author: (t.author as unknown as { name: string } | null)?.name ?? '?', text: t.raw_text, rule: t.rule, label: t.rule_label,
       probability: t.probability, points: t.points_if_won, status: t.status, revealed: t.revealed,
     })));
-    callBot<{ slack: boolean; ai: boolean; secret: boolean; error?: string }>({ action: 'status' })
+    callBot<{ slack: boolean; ai: boolean; aiError?: string | null; secret: boolean; error?: string }>({ action: 'status' })
       .then((r) => { if (r.error) setStatusErr(r.error); else setStatus(r); })
       .catch(() => setStatusErr('Fonction serveur injoignable (déploiement Vercel en cours ?)'));
   }, [live]);
@@ -90,7 +90,8 @@ export function Admin() {
         <Chip ok={tickAge !== null && tickAge <= 3} label="Planificateur" value={tickAge === null ? 'jamais lancé' : tickAge <= 1 ? 'actif' : `dernier passage il y a ${tickAge} min`} />
         <Chip ok={status?.slack} label="Slack" value={status ? (status.slack ? 'branché' : 'webhook manquant') : statusErr ? '?' : '…'} />
         <Chip ok={status?.secret} label="Secret du bot" value={status ? (status.secret ? 'valide' : 'à recopier dans Vercel') : statusErr ? '?' : '…'} />
-        <Chip ok={status?.ai} label="IA" value={status ? (status.ai ? 'branchée' : 'clé absente') : statusErr ? '?' : '…'} />
+        <Chip ok={status?.ai} label="IA" value={status ? (status.ai ? 'branchée' : !status.aiError || status.aiError === 'clé absente' ? 'clé absente' : 'en erreur') : statusErr ? '?' : '…'} />
+        {status && !status.ai && status.aiError && status.aiError !== 'clé absente' && <span className="hint">IA (Gemini) : {status.aiError}</span>}
         {statusErr && <span className="hint">{statusErr}</span>}
       </div>
 
@@ -143,7 +144,7 @@ export function Admin() {
               <input id="delay" type="number" min={3} max={60} value={local.debrief_delay_min} onChange={(e) => set('debrief_delay_min', Math.max(3, Math.min(60, Number(e.target.value) || 7)))} /> <span className="hint">min</span>
             </label>
             <Toggle on={local.debrief_takes} onChange={(v) => set('debrief_takes', v)} label="Inclure les Takes" desc="Honorés et ratés, avec la phrase de chaque pilote." />
-            <Toggle on={local.ai_pen} onChange={(v) => set('ai_pen', v)} disabled={status !== null && !status.ai} label="Plume IA" desc={status && !status.ai ? 'Disponible quand la clé Anthropic est ajoutée dans Vercel.' : 'Un récit inédit à chaque session ; la bibliothèque reprend la main en cas de souci.'} />
+            <Toggle on={local.ai_pen} onChange={(v) => set('ai_pen', v)} disabled={status !== null && !status.ai} label="Plume IA" desc={status && !status.ai ? 'Disponible quand la clé Gemini (GEMINI_API_KEY) répond dans Vercel.' : 'Un récit inédit à chaque session ; la bibliothèque reprend la main en cas de souci.'} />
           </div>
         </Panel>
 
