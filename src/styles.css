@@ -1091,3 +1091,7 @@ tr.hit { animation: hit-shake 0.5s ease 2; background: rgba(255, 64, 87, 0.18) !
 .secret-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-left: 3px solid var(--edge-2); background: rgba(32, 37, 63, 0.5); }
 .secret-list li.ok { border-color: var(--green); } .secret-list li.ok b { color: var(--green); }
 .secret-list li b { font-family: var(--font-display); letter-spacing: 0.06em; }
+
+.take-notice { margin: 0; padding: 10px 12px; border-radius: 0 4px 4px 0; font-size: 0.9rem; line-height: 1.45; }
+.take-notice.ok { border-left: 3px solid var(--green); background: rgba(73, 245, 161, 0.08); }
+.take-notice.warn { border-left: 3px solid var(--yellow); background: rgba(255, 216, 77, 0.08); }

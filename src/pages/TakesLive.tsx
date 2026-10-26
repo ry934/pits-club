@@ -10,7 +10,7 @@ import { estimateProbability, pointsFor, ruleLabel, TakeRule } from '../lib/take
 import { useStore } from '../store';
 
 type Row = LiveTake & { day: string };
-type Draft = { text: string; rule: TakeRule | null; label: string | null; reason: string | null; manual: boolean };
+type Notice = { tone: 'ok' | 'warn'; text: string } | null;
 
 const VERDICT: Record<TakeVerdict, string> = { won: 'Honoré', lost: 'Raté', void: 'Annulé', manual: 'À arbitrer' };
 
@@ -23,6 +23,7 @@ export function TakesLive() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [posted, setPosted] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice>(null);
 
   const load = useCallback(async () => {
     const sb = (await getSupabase())!;
@@ -86,12 +87,13 @@ export function TakesLive() {
 
       <div className="grid grid-paddock">
         <div className="stack">
+          {notice && <p className={`take-notice ${notice.tone}`} role="status">{notice.text}</p>}
           {!me ? (
             <Panel hud="purple" title="Mon Take"><p className="muted" style={{ margin: 0 }}>Les Takes sont réservés aux pilotes. Tu peux suivre leur révélation après chaque session.</p></Panel>
           ) : !settings.takes_enabled ? (
             <Panel hud="purple" title="Mon Take"><p className="muted" style={{ margin: 0 }}>Les Takes sont en pause pour le moment.</p></Panel>
           ) : (
-            <MyTake key={mine?.id ?? 'new'} mine={mine} open={open} onSaved={load} lineup={lineup} avgRaces={avgRaces}
+            <MyTake key={mine?.id ?? 'new'} mine={mine} open={open} onSaved={(n) => { setNotice(n); load(); }} lineup={lineup} avgRaces={avgRaces}
               closedReason={sessionStarted ? 'La session a commencé : les Takes sont fermés.' : `Les Takes ferment à ${fmtHour(settings.takes_deadline)}. Rendez-vous demain matin.`}
               verdict={mine?.revealed ? takeVerdict(mine, todayRaces) : null} ratings={elo.rating} />
           )}
@@ -190,47 +192,45 @@ function TakeCard({ t, verdict, delay }: { t: Row; verdict: TakeVerdict; delay: 
 }
 
 function MyTake({ mine, open, onSaved, lineup, avgRaces, closedReason, verdict, ratings }: {
-  mine: Row | null; open: boolean; onSaved: () => void; lineup: string[]; avgRaces: number; closedReason: string;
+  mine: Row | null; open: boolean; onSaved: (notice: Notice) => void; lineup: string[]; avgRaces: number; closedReason: string;
   verdict: TakeVerdict | null; ratings: Map<string, number>;
 }) {
   const [editing, setEditing] = useState(!mine);
   const [text, setText] = useState(mine?.text ?? '');
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [busy, setBusy] = useState<'parse' | 'save' | null>(null);
+  const [busy, setBusy] = useState<'analyse' | 'save' | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const prob = useMemo(() => (draft?.rule ? estimateProbability(draft.rule, lineup, ratings, avgRaces, 1500, 7) : null), [draft?.rule, lineup, ratings, avgRaces]);
-
-  const analyse = async () => {
-    setBusy('parse'); setMsg(null); setDraft(null);
+  /**
+   * Un seul clic : l'IA traduit le Take en règle, puis il est enregistré dans tous les cas.
+   * Si l'IA ne sait pas le traduire (ou ne répond pas), il part en arbitrage manuel : rien n'est perdu.
+   */
+  const submit = async () => {
+    const t = text.trim();
+    if (t.length < 3) { setMsg('Écris ton Take avant de valider.'); return; }
+    setMsg(null); setBusy('analyse');
+    let rule: TakeRule | null = null, label: string | null = null, reason: string | null = null;
     try {
-      const r = await callBot<{ ok: boolean; rule?: TakeRule; label?: string; reason?: string; unavailable?: boolean }>({ action: 'parse-take', text });
-      setDraft(r.ok && r.rule ? { text, rule: r.rule, label: r.label ?? ruleLabel(r.rule), reason: null, manual: false }
-        : { text, rule: null, label: null, reason: r.reason ?? 'Take impossible à vérifier automatiquement.', manual: !!r.unavailable });
-    } catch (e) {
-      setDraft({ text, rule: null, label: null, reason: "L'analyse automatique n'est pas disponible : ton Take sera arbitré à la main.", manual: true });
-      void e;
+      const r = await callBot<{ ok: boolean; rule?: TakeRule; label?: string; reason?: string }>({ action: 'parse-take', text: t });
+      if (r.ok && r.rule) { rule = r.rule; label = r.label ?? ruleLabel(r.rule); } else reason = r.reason ?? null;
+    } catch {
+      reason = "l'analyse automatique n'a pas répondu";
     }
-    setBusy(null);
-  };
-
-  const save = async (manual: boolean) => {
-    if (!draft) return;
-    setBusy('save'); setMsg(null);
-    const rule = manual ? null : draft.rule;
-    const p = rule ? prob : null;
+    setBusy('save');
+    const p = rule ? estimateProbability(rule, lineup, ratings, avgRaces, 1500, 7) : null;
     const { error } = await (await getSupabase())!.rpc('submit_take', {
-      p_text: draft.text, p_rule: rule, p_label: rule ? draft.label : null,
+      p_text: t, p_rule: rule, p_label: label,
       p_probability: p !== null ? Math.round(p * 1000) / 1000 : null, p_points: p !== null ? pointsFor(p) : null,
     });
     setBusy(null);
-    if (error) { setMsg(error.message); return; }
-    setEditing(false); setDraft(null); onSaved();
+    if (error) { setMsg(`Take non enregistré : ${error.message}`); return; }
+    onSaved(rule
+      ? { tone: 'ok', text: `Take enregistré et scellé. Règle retenue : ${label}.` }
+      : { tone: 'warn', text: `Take enregistré et scellé, en arbitrage manuel${reason ? ` (${reason.replace(/\.$/, '')})` : ''}. Un admin tranchera après la session ; tu peux aussi le reformuler avant la clôture.` });
   };
 
   const remove = async () => {
     const { error } = await (await getSupabase())!.rpc('delete_my_take');
-    if (error) setMsg(error.message); else { setText(''); setEditing(true); onSaved(); }
+    if (error) setMsg(error.message); else { setText(''); setEditing(true); onSaved(null); }
   };
 
   const status = mine ? (verdict ? VERDICT[verdict] : open ? 'Scellé' : 'Verrouillé') : 'Brouillon';
@@ -254,43 +254,18 @@ function MyTake({ mine, open, onSaved, lineup, avgRaces, closedReason, verdict, 
         ) : (
           <>
             <label className="field"><span>Ta prédiction, avec tes mots</span>
-              <textarea id="take-text" rows={2} maxLength={280} value={text} placeholder="Ex. Je mets Paul dans le rétro ce midi" onChange={(e) => { setText(e.target.value); setDraft(null); }} />
+              <textarea id="take-text" rows={2} maxLength={280} value={text} placeholder="Ex. Je mets Paul dans le rétro ce midi" onChange={(e) => { setText(e.target.value); setMsg(null); }} />
             </label>
-            {!draft && <button className="btn btn-purple" disabled={text.trim().length < 3 || busy !== null} onClick={analyse}>{busy === 'parse' ? 'Analyse…' : 'Analyser mon Take'}</button>}
-            {draft?.rule && (
-              <>
-                <div className="stack" style={{ gap: 6 }}>
-                  <span className="label">Règle vérifiable</span>
-                  <span className="take-rule">{draft.label}</span>
-                  <span className="hint">C'est cette règle qui décidera si ton Take est honoré. Si elle ne te convient pas, reformule.</span>
-                </div>
-                {prob !== null && (
-                  <div className="odds">
-                    <div className="stat"><span className="label">Probabilité</span><span className="stat-value violet num">{Math.round(prob * 100)} %</span></div>
-                    <div className="stat"><span className="label">Gain si honoré</span><span className="stat-value gold num">{pointsFor(prob)} pts</span></div>
-                    <div className="odds-gauge" aria-hidden="true"><span style={{ width: `${prob * 100}%` }} /></div>
-                  </div>
-                )}
-                <div className="btn-row">
-                  <button className="btn btn-purple" disabled={busy !== null} onClick={() => save(false)}>{busy === 'save' ? 'Envoi…' : 'Valider mon Take'}</button>
-                  <button className="btn btn-sm" onClick={() => setDraft(null)}>Reformuler</button>
-                </div>
-              </>
-            )}
-            {draft && !draft.rule && (
-              <>
-                <p className="form-msg" style={{ margin: 0 }}>{draft.reason}</p>
-                <div className="btn-row">
-                  <button className="btn" onClick={() => setDraft(null)}>Reformuler</button>
-                  <button className={`btn ${draft.manual ? 'btn-purple' : 'btn-sm'}`} disabled={busy !== null} onClick={() => save(true)}>Envoyer pour arbitrage manuel</button>
-                </div>
-                <span className="hint">Arbitrage manuel : un admin décidera après la session si ton Take est honoré. Pas de points de difficulté dans ce cas (10 pts).</span>
-              </>
-            )}
-            {mine && <button className="btn btn-sm" onClick={() => setEditing(false)}>Annuler</button>}
+            <div className="btn-row">
+              <button className="btn btn-purple" disabled={text.trim().length < 3 || busy !== null} onClick={submit}>
+                {busy === 'analyse' ? 'Analyse…' : busy === 'save' ? 'Enregistrement…' : mine ? 'Valider la modification' : 'Valider mon Take'}
+              </button>
+              {mine && <button className="btn btn-sm" onClick={() => setEditing(false)} disabled={busy !== null}>Annuler</button>}
+            </div>
+            <span className="hint">Un clic suffit : ton Take est traduit en règle vérifiable puis enregistré. S'il ne peut pas être traduit, il est quand même enregistré et un admin tranchera.</span>
           </>
         )}
-        {msg && <p className="form-msg">{msg}</p>}
+        {msg && <p className="form-msg" role="alert">{msg}</p>}
       </div>
     </Panel>
   );
