@@ -280,9 +280,9 @@ export function sessionSummary(day: string, dayRaces: Race[], elo: EloResult): S
 }
 
 export function sessionState(day: string, dayRaces: Race[], closed: Set<string>, now = new Date()): 'live' | 'closed' {
-  if (closed.has(day) || day !== dayKey(now)) return 'closed';
-  const idle = (now.getTime() - dayRaces.at(-1)!.ts.getTime()) / 60000;
-  return idle < SETTINGS.sessionIdleMinutes ? 'live' : 'closed';
+  // Le premier formulaire du jour ouvre la session ; elle reste en direct jusqu'à la clôture manuelle.
+  if (closed.has(day) || day !== dayKey(now) || !dayRaces.length) return 'closed';
+  return 'live';
 }
 
 // ---------------------------------------------------------------- face-à-face

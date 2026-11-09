@@ -5,7 +5,7 @@ import { BADGE } from '../lib/badges';
 import { href } from '../router';
 import { useStore } from '../store';
 import { dayKey, fmtDay, fmtDuration, fmtTime, ratingAt, sessionState, sessionSummary } from '../lib/stats';
-import { CloseSessionButton } from './Profil';
+import { CloseSessionButton, ReopenSessionButton } from '../components/CloseSession';
 
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -39,7 +39,8 @@ export function Session({ day: dayParam, afterTable }: { day?: string; afterTabl
         {next ? <a className="iconbtn" href={href('stats', 'session', next)} aria-label="Session suivante">›</a> : <span className="iconbtn off">›</span>}
       </header>
       {!isToday && dayList.includes(today) && <div><a className="btn btn-sm" href={href('stats', 'session', today)}>Revenir à la session du jour</a></div>}
-      {state === 'live' && <div className="btn-row"><CloseSessionButton day={day} /></div>}
+      {state === 'live' && <div className="btn-row"><CloseSessionButton /></div>}
+      {state === 'closed' && isToday && <div className="btn-row"><ReopenSessionButton day={day} /></div>}
 
       <div className="kpis">
         <Panel><Stat label="Courses" value={<CountUp value={s.races.length} />} /></Panel>

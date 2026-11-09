@@ -1095,3 +1095,10 @@ tr.hit { animation: hit-shake 0.5s ease 2; background: rgba(255, 64, 87, 0.18) !
 .take-notice { margin: 0; padding: 10px 12px; border-radius: 0 4px 4px 0; font-size: 0.9rem; line-height: 1.45; }
 .take-notice.ok { border-left: 3px solid var(--green); background: rgba(73, 245, 161, 0.08); }
 .take-notice.warn { border-left: 3px solid var(--yellow); background: rgba(255, 216, 77, 0.08); }
+
+/* Clôture de session */
+.close-session { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn-flag { border-color: color-mix(in srgb, var(--yellow) 55%, transparent); }
+.btn-flag::before { content: ''; width: 12px; height: 12px; flex: none;
+  background: conic-gradient(currentColor 25%, transparent 0 50%, currentColor 0 75%, transparent 0) 0 0 / 6px 6px; opacity: .85; }
+.form-msg.ok { color: var(--green, #3ddc97); }

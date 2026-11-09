@@ -8,20 +8,6 @@ import { href } from '../router';
 import { foundSecrets, SECRETS } from '../lib/secrets';
 
 
-export function CloseSessionButton({ day }: { day: string }) {
-  const { reload } = useStore();
-  const { live, me } = useAuth();
-  const [busy, setBusy] = useState(false);
-  if (!live || !me) return null;
-  const close = async () => {
-    setBusy(true);
-    await (await getSupabase())!.from('session_closures').insert({ day });
-    setBusy(false);
-    reload();
-  };
-  return <button className="btn btn-flag" onClick={close} disabled={busy}>{busy ? 'Clôture…' : 'Fin de session'}</button>;
-}
-
 export function Profil() {
   const { me, visitor } = useAuth();
   return (

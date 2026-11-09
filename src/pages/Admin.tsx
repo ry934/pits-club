@@ -139,10 +139,7 @@ export function Admin() {
 
         <Panel hud="yellow" title="Débrief de fin de session">
           <div className="stack">
-            <Toggle on={local.debrief_enabled} onChange={(v) => set('debrief_enabled', v)} label="Débrief automatique" desc="Envoyé après la dernière course du jour, ou dès qu'un pilote clôture la session." />
-            <label className="field inline"><span>Délai après la dernière course</span>
-              <input id="delay" type="number" min={3} max={60} value={local.debrief_delay_min} onChange={(e) => set('debrief_delay_min', Math.max(3, Math.min(60, Number(e.target.value) || 7)))} /> <span className="hint">min</span>
-            </label>
+            <Toggle on={local.debrief_enabled} onChange={(v) => set('debrief_enabled', v)} label="Débrief sur Slack à la clôture" desc="Envoyé dès qu'un pilote clique « Clôturer la session » (Paddock, mode direct ou Stats › Session). Plus d'envoi automatique." />
             <Toggle on={local.debrief_takes} onChange={(v) => set('debrief_takes', v)} label="Inclure les Takes" desc="Honorés et ratés, avec la phrase de chaque pilote." />
             <Toggle on={local.ai_pen} onChange={(v) => set('ai_pen', v)} disabled={status !== null && !status.ai} label="Plume IA" desc={status && !status.ai ? 'Disponible quand la clé Gemini (GEMINI_API_KEY) répond dans Vercel.' : 'Un récit inédit à chaque session ; la bibliothèque reprend la main en cas de souci.'} />
           </div>

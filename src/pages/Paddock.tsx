@@ -10,6 +10,7 @@ import { dayKey, fmtDay, fmtDuration, sessionState } from '../lib/stats';
 import { href } from '../router';
 import { useStore } from '../store';
 import { useAuth } from '../auth';
+import { CloseSessionButton } from '../components/CloseSession';
 import { discover, fx } from '../lib/secrets';
 
 export function useNow(intervalMs = 1000) {
@@ -87,6 +88,7 @@ export function Paddock() {
             {hello ? <p className="me-hello">{hello}</p> : <p className="me-hello">Bienvenue au paddock. Les chiffres sont dans Stats, les paris dans Takes.</p>}
             <div className="btn-row">
               {live && <a className="btn btn-primary live-link" href="#/direct">Session en cours · mode direct</a>}
+              {live && <CloseSessionButton size="sm" />}
               {me && <a className="btn btn-sm" href={href('stats', 'pilote', me)}>Ma fiche</a>}
               <a className="btn btn-sm" href={href('stats', 'session', lastDay)}>{lastDay === today ? 'Session du jour' : 'Dernière session'}</a>
             </div>

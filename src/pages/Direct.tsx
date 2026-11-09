@@ -9,6 +9,7 @@ import { dayKey, fmtAvg, fmtDay, fmtDuration, fmtTime, ratingAt, sessionState } 
 import { SETTINGS } from '../lib/types';
 import { useStore } from '../store';
 import { discover } from '../lib/secrets';
+import { CloseSessionButton } from '../components/CloseSession';
 
 /**
  * Mode direct : écran plein cadre laissé ouvert sur le PC pendant la session, lisible à 3-4 mètres.
@@ -245,6 +246,7 @@ function LiveTop({ state, now, count, sub, sync, onFull, sound, onSound, onDemo 
       </span>
       <button type="button" className={`btn btn-sm live-sound ${sound ? 'on' : ''}`} onClick={onSound} aria-pressed={sound}>{sound ? 'Son activé' : 'Son coupé'}</button>
       {onDemo && <button type="button" className="btn btn-sm" onClick={onDemo} title="Rejoue trois animations d'exemple">Tester</button>}
+      {state === 'live' && <CloseSessionButton size="sm" />}
       <button type="button" className="btn btn-sm live-full" onClick={onFull}>Plein écran</button>
       <a className="btn btn-sm" href="#/">Quitter</a>
     </header>

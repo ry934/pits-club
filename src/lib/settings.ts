@@ -5,14 +5,14 @@ import { getSupabase } from './supabase';
 /** Réglages de l'app (table settings), avec des valeurs par défaut quand la base ne les a pas encore. */
 export type AppSettings = {
   bot_paused: boolean; bot_pause_reason: string; bot_tone: 'sobre' | 'taquin' | 'piquant'; bot_days: number[];
-  debrief_enabled: boolean; debrief_delay_min: number; debrief_takes: boolean;
+  debrief_enabled: boolean; debrief_takes: boolean;
   reminder_enabled: boolean; reminder_time: string; ai_pen: boolean;
   takes_enabled: boolean; takes_deadline: string; roast_optout: string[]; app_url: string;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   bot_paused: false, bot_pause_reason: '', bot_tone: 'taquin', bot_days: [1, 2, 3, 4, 5],
-  debrief_enabled: true, debrief_delay_min: 7, debrief_takes: true,
+  debrief_enabled: true, debrief_takes: true,
   reminder_enabled: true, reminder_time: '12:00', ai_pen: false,
   takes_enabled: true, takes_deadline: '13:00', roast_optout: [], app_url: 'https://pits-club.vercel.app',
 };
